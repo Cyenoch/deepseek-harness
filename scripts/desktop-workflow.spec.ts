@@ -19,22 +19,12 @@ const REQUIRED_PATHS = [
 const DESKTOP_LEGS = [
   {
     target: 'macos-arm64',
-    runner: 'node24-macos-arm64',
+    runner: 'macos-14',
     'builder-args': '--mac dmg zip --arm64 --publish never',
   },
   {
-    target: 'macos-x64',
-    runner: 'node24-macos-x64',
-    'builder-args': '--mac dmg zip --x64 --publish never',
-  },
-  {
-    target: 'linux-x64',
-    runner: 'node24-linux-x64',
-    'builder-args': '--linux AppImage deb --x64 --publish never',
-  },
-  {
     target: 'windows-x64',
-    runner: 'node24-win-x64',
+    runner: 'windows-2025',
     'builder-args': '--win nsis msi --x64 --publish never',
   },
 ] as const
@@ -88,7 +78,7 @@ describe('Electron desktop workflow', () => {
     expect(workflow.on.workflow_dispatch).toBeNull()
   })
 
-  it('builds four native Electron targets without signing or publication', () => {
+  it('builds two supported native Electron targets without builder-side signing or publication', () => {
     expect(matrixLegs(build)).toEqual(DESKTOP_LEGS)
     expect(build['runs-on']).toBe('${{ matrix.runner }}')
     expect(build['timeout-minutes']).toBe(60)
@@ -117,12 +107,85 @@ describe('Electron desktop workflow', () => {
       .toBe('pnpm --dir apps/desktop exec electron-builder ${{ matrix.builder-args }}')
     expect(namedStep(steps, 'Verify artifact set').run)
       .toContain('scripts/verify-desktop-artifacts.ts')
+    expect(usesStep(steps, 'actions/upload-artifact@').uses).toBe('actions/upload-artifact@v6')
     expect(usesStep(steps, 'actions/upload-artifact@').with).toEqual({
       name: 'dsh-desktop-${{ matrix.target }}',
-      path: 'apps/desktop/release/*',
+      path: `${[
+        'apps/desktop/release/*.dmg',
+        'apps/desktop/release/*.zip',
+        'apps/desktop/release/*.exe',
+        'apps/desktop/release/*.msi',
+      ].join('\n')}\n`,
       'if-no-files-found': 'error',
       'retention-days': 7,
     })
+  })
+
+  it('does not cancel a master push while a later push starts another Release', () => {
+    expect(workflow.concurrency).toEqual({
+      group: "${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}",
+      'cancel-in-progress': "${{ github.event_name != 'push' }}",
+    })
+  })
+
+  it('publishes unsigned Windows x64 and macOS arm64 installers only on master pushes', () => {
+    const release = workflowJob(workflow, 'release')
+    const releaseSteps = jobSteps(release)
+    const downloads = releaseSteps.filter(step => (
+      typeof step.uses === 'string' && step.uses.startsWith('actions/download-artifact@')
+    ))
+    const publish = namedStep(releaseSteps, 'Publish GitHub Release')
+    const script = String(publish.run)
+
+    expect(Object.keys(workflow.jobs ?? {}).sort()).toEqual(['build', 'release'])
+    expect(release.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+    expect(release.needs).toBe('build')
+    expect(release['runs-on']).toBe('ubuntu-latest')
+    expect(release.permissions).toEqual({ contents: 'write' })
+    expect(usesStep(releaseSteps, 'actions/checkout@').with).toEqual({ 'persist-credentials': false })
+    expect(downloads.map(step => step.uses)).toEqual([
+      'actions/download-artifact@v8',
+      'actions/download-artifact@v8',
+    ])
+    expect(downloads.map(step => step.with)).toEqual([
+      { name: 'dsh-desktop-macos-arm64', path: 'release' },
+      { name: 'dsh-desktop-windows-x64', path: 'release' },
+    ])
+    expect(publish.env).toEqual({ GH_TOKEN: '${{ github.token }}' })
+    expect(script).toContain("require('./apps/desktop/package.json').version")
+    expect(script).toContain('desktop-v${version}-g${GITHUB_SHA}')
+    expect(script).toContain('DeepSeek Harness Desktop v${version} (${GITHUB_SHA:0:12})')
+    expect(script).toContain('DeepSeek Harness-${version}-mac-arm64.dmg')
+    expect(script).toContain('DeepSeek Harness-${version}-mac-arm64.zip')
+    expect(script).toContain('DeepSeek Harness-${version}-win-x64.exe')
+    expect(script).toContain('DeepSeek Harness-${version}-win-x64.msi')
+    expect(script).toContain('sha256sum')
+    expect(script).toContain('SHA256SUMS')
+    expect(script).toContain('gh release view')
+    expect(script).toContain('--json isDraft')
+    expect(script).toContain('release_state')
+    expect(script).toContain('== "published"')
+    expect(script).toContain('== "missing"')
+    expect(script).toContain('!= "draft"')
+    const createIndex = script.indexOf('gh release create')
+    const uploadIndex = script.indexOf('gh release upload')
+    const publishIndex = script.indexOf('gh release edit')
+    expect(createIndex).toBeGreaterThan(-1)
+    expect(createIndex).toBeLessThan(uploadIndex)
+    expect(uploadIndex).toBeLessThan(publishIndex)
+    expect(script).toContain('--draft')
+    expect(script).toContain('--generate-notes')
+    expect(script).toContain('--target "${GITHUB_SHA}"')
+    expect(script).toContain('--clobber')
+    expect(script).toContain('--draft=false')
+    expect(script).toContain('--prerelease')
+    expect(script).toMatch(/version.+== \*-\*/)
+    expect(script).not.toContain('dsh-desktop-macos-x64')
+    expect(script).not.toContain('dsh-desktop-linux-x64')
+    expect(script).not.toContain('mac-x64')
+    expect(script).not.toContain('linux-x64')
+    expect(script).not.toMatch(/AppImage|\.deb/u)
+    expect(JSON.stringify(release)).not.toMatch(/softprops|ncipollo|action-gh-release/u)
   })
 
   it('declares the Group plugin that app-boot requires at Host boot', () => {
@@ -132,12 +195,13 @@ describe('Electron desktop workflow', () => {
     expect(manifest.dependencies?.['@deepseek-ai/cordis-plugin-group']).toBe('workspace:^')
   })
 
-  it('contains no Tauri, Rust, sidecar, SEA, signing secret, or publish path', () => {
+  it('contains no Tauri, Rust, sidecar, SEA, signing secret, updater, or registry publication', () => {
     walk(workflow, (value, path) => {
       if (typeof value !== 'string') return
       expect(value, path).not.toMatch(/tauri|rust|sidecar|pkg-target|src-tauri|--sea/iu)
       expect(value, path).not.toMatch(/\$\{\{\s*secrets\./u)
-      expect(value, path).not.toMatch(/notari[sz]|auto.?update/iu)
+      expect(value, path).not.toMatch(/notari[sz]|auto.?update|electron-updater/iu)
+      expect(value, path).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN|registry\.npmjs|pypi|twine/iu)
     })
   })
 })

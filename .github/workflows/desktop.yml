@@ -1,5 +1,6 @@
-# Unsigned Electron desktop validation. Each artifact is built on its native
-# operating system and retained for inspection; this workflow does not publish.
+# Unsigned Electron validation plus master-only Windows x64 and macOS arm64
+# GitHub Releases. Native targets build on matching runners; package registries
+# remain out of scope.
 name: Desktop
 
 on:
@@ -30,9 +31,12 @@ on:
       - 'tsconfig*.json'
   workflow_dispatch:
 
+# Push runs are keyed by SHA so a later master push cannot cancel a mid-flight
+# release. Pull requests and manual runs still cancel superseded work on the
+# same ref.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 permissions:
   contents: read
@@ -52,16 +56,10 @@ jobs:
       matrix:
         include:
           - target: macos-arm64
-            runner: node24-macos-arm64
+            runner: macos-14
             builder-args: --mac dmg zip --arm64 --publish never
-          - target: macos-x64
-            runner: node24-macos-x64
-            builder-args: --mac dmg zip --x64 --publish never
-          - target: linux-x64
-            runner: node24-linux-x64
-            builder-args: --linux AppImage deb --x64 --publish never
           - target: windows-x64
-            runner: node24-win-x64
+            runner: windows-2025
             builder-args: --win nsis msi --x64 --publish never
     steps:
       - uses: actions/checkout@v6
@@ -76,13 +74,6 @@ jobs:
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
-
-      - name: Install Linux packaging dependencies
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update -q
-          sudo apt-get install -yq libfuse2
 
       - name: Install (immutable)
         shell: bash
@@ -112,6 +103,82 @@ jobs:
       - uses: actions/upload-artifact@v6
         with:
           name: dsh-desktop-${{ matrix.target }}
-          path: apps/desktop/release/*
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.msi
           if-no-files-found: error
           retention-days: 7
+
+  release:
+    name: Release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dsh-desktop-macos-arm64
+          path: release
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dsh-desktop-windows-x64
+          path: release
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./apps/desktop/package.json').version")"
+          tag="desktop-v${version}-g${GITHUB_SHA}"
+          title="DeepSeek Harness Desktop v${version} (${GITHUB_SHA:0:12})"
+          cd release
+          assets=(
+            "DeepSeek Harness-${version}-mac-arm64.dmg"
+            "DeepSeek Harness-${version}-mac-arm64.zip"
+            "DeepSeek Harness-${version}-win-x64.exe"
+            "DeepSeek Harness-${version}-win-x64.msi"
+          )
+          for asset in "${assets[@]}"; do
+            if [[ ! -s "${asset}" ]]; then
+              echo "::error::missing or empty ${asset}"
+              exit 1
+            fi
+          done
+          sha256sum "${assets[@]}" | sort -k2 > SHA256SUMS
+          release_state="$(
+            gh release view "${tag}" \
+              --json isDraft \
+              --jq 'if .isDraft then "draft" else "published" end' \
+              2>/dev/null || printf 'missing'
+          )"
+          if [[ "${release_state}" == "published" ]]; then
+            exit 0
+          fi
+          if [[ "${release_state}" == "missing" ]]; then
+            prerelease_args=()
+            if [[ "${version}" == *-* ]]; then
+              prerelease_args=(--prerelease)
+            fi
+            gh release create "${tag}" \
+              --draft \
+              --title "${title}" \
+              --generate-notes \
+              --target "${GITHUB_SHA}" \
+              "${prerelease_args[@]}"
+          elif [[ "${release_state}" != "draft" ]]; then
+            echo "::error::unexpected release state ${release_state}"
+            exit 1
+          fi
+          gh release upload "${tag}" "${assets[@]}" SHA256SUMS --clobber
+          gh release edit "${tag}" --draft=false

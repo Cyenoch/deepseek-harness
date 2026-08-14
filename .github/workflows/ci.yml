@@ -15,21 +15,13 @@ on:
           - larger-runner-benchmark
           - consolidated-runner-benchmark
 
-# Cancel a superseded run on every event EXCEPT push. A push run carries the two
-# self-hosted standby drills, which take longer than the interval between master
-# merges, so cancelling supersedes a drill before it reaches a verdict and the
-# lane yields no readiness evidence. Must be decided here: cancellation applies
-# to the whole superseded run, so a job-level group cannot exempt its job.
-# Negated rather than `== 'pull_request'` so workflow_dispatch keeps cancelling:
-# a re-dispatched runner benchmark holds up to 12 larger runners for 15 minutes
-# and shares this group with the drills on master, so queueing it would delay
-# them. The guarantee is narrow — evaluated against the newly triggered run, so a
-# dispatch on master still cancels a mid-flight drill, and a newer pending push
-# displaces an older one. Bounds and rationale:
-# .agents/notes/implemented/process/2026-07-26-ci-failover-runbook.md
+# This fork has no upstream self-hosted standby pool, so superseded runs cancel
+# by default. Repositories that provision both upstream pools can set
+# DSH_ENABLE_SELFHOSTED_STANDBY=true; master pushes then retain the drills until
+# completion while pull requests and manual benchmarks still cancel stale runs.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'push' }}
+  cancel-in-progress: ${{ vars.DSH_ENABLE_SELFHOSTED_STANDBY != 'true' || github.event_name != 'push' }}
 
 permissions:
   contents: read
@@ -43,7 +35,7 @@ env:
 jobs:
 
   # TODO(hosted-serial-ci): Re-enable the three hosted serial reference jobs before release.
-  # The self-hosted standby remains active on every master push.
+  # The upstream self-hosted standby drills require DSH_ENABLE_SELFHOSTED_STANDBY=true.
 
   # Three enterprise jobs isolate coverage, static analysis, and the
   # build-backed consumer tail. The consumer job owns the only Linux build so
@@ -558,21 +550,11 @@ jobs:
           DSH_SNAPSHOT_MAX_CONCURRENCY: '1'
         run: pnpm run check:ci:linux-primary
 
-  # Hot-standby drill for the in-house self-hosted pool: every master move
-  # re-runs the complete unsharded aggregate on the persistent 64-core VM,
-  # continuously proving that environment can take over a required lane if
-  # the hosted pools degrade (the switch is then setting the writer-manageable
-  # DSH_CI_FAILOVER_LINUX variable — see the failover runbook, no merge required).
-  # Push-triggered, so this lane always executes the base branch's own
-  # workflow definition. (Under failover, pull_request jobs do reach these
-  # runners with the PR merge ref's workflow — the boundary there is
-  # repository membership: private, forking disabled, Dependabot excluded.)
-  # Non-blocking for
-  # pull requests; no cache steps because the VM's persistent pnpm store and
-  # tool caches make them redundant (and saving here would poison the hosted
-  # cache namespace with self-hosted paths).
+  # Optional hot-standby drill for the upstream in-house Linux pool. The fork
+  # does not provision this runner; explicit repository opt-in retains the
+  # upstream failover rehearsal without leaving ordinary master runs queued.
   serial-linux-selfhosted:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && vars.DSH_ENABLE_SELFHOSTED_STANDBY == 'true'
     name: serial / linux (self-hosted standby)
     runs-on: [self-hosted, linux, x64, vm-backup]
     steps:
@@ -644,19 +626,11 @@ jobs:
           DSH_SNAPSHOT_MAX_CONCURRENCY: '1'
         run: pnpm run check:ci
 
-  # Hot-standby drill for the in-house self-hosted Windows pool: every master
-  # move re-runs the complete unsharded Windows gate inventory on the persistent
-  # VM, continuously proving that environment can take over the required
-  # `windows` lane if the hosted pool degrades (the switch is setting the
-  # writer-manageable DSH_CI_FAILOVER_WINDOWS variable — see the failover
-  # runbook, no merge required). Push-triggered, so this lane always executes
-  # the base branch's own workflow definition. Non-blocking for pull requests;
-  # absent from all-checks-passed.needs by design — the required `windows` job
-  # owns the PR verdict. No cache steps because the VM's persistent pnpm store
-  # and tool caches make them redundant (and saving here would poison the
-  # hosted cache namespace with self-hosted paths).
+  # Optional hot-standby drill for the upstream in-house Windows pool. The fork
+  # does not provision this runner; explicit repository opt-in retains the
+  # upstream failover rehearsal without leaving ordinary master runs queued.
   serial-windows:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && vars.DSH_ENABLE_SELFHOSTED_STANDBY == 'true'
     name: serial / windows (self-hosted standby)
     runs-on: [self-hosted, dsh-win-ci, windows]
     timeout-minutes: 60

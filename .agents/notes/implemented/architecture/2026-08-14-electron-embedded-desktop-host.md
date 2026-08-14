@@ -48,7 +48,7 @@ On macOS the main `BrowserWindow` uses `hiddenInset` with traffic lights at `x=1
 
 The desktop artifact is larger than a system-WebView shell because it ships Chromium and Electron. Packaging now follows one JavaScript dependency graph and one application lifecycle, while the renderer stays carrier-independent and the browser profile continues to own HTTP/WebSocket access.
 
-The current release artifacts are unsigned and have no updater. Signing, notarization, and update policy remain distribution work; they are not implicit in the application runtime.
+The [desktop release workflow](../process/2026-08-14-unsigned-desktop-github-releases.md) publishes unsigned Windows x64 and macOS arm64 installers. The application has no updater; signing, notarization, and automatic update policy remain separate distribution decisions rather than implicit runtime behavior.
 
 ## Testing
 

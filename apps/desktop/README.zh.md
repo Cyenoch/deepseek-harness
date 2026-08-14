@@ -37,7 +37,7 @@ pnpm dev:desktop
 pnpm --dir apps/desktop run build
 ```
 
-`electron-builder` 把产物写入 `apps/desktop/release/`：macOS 为 DMG 与 ZIP，Linux 为 AppImage 与 DEB，Windows 为 NSIS EXE 与 MSI。`pnpm --dir apps/desktop run pack` 会创建可供本地检查的未封装应用。桌面工作流在匹配的原生 runner 上构建 macOS arm64/x64、Linux x64 与 Windows x64，校验每组产物并上传供检查，但不发布。
+`electron-builder` 把产物写入 `apps/desktop/release/`：macOS 为 DMG 与 ZIP，Linux 为 AppImage 与 DEB，Windows 为 NSIS EXE 与 MSI。`pnpm --dir apps/desktop run pack` 会创建可供本地检查的未封装应用。桌面工作流使用 GitHub 标准托管的 `macos-14` 与 `windows-2025` runner 构建受支持的 macOS arm64 和 Windows x64 目标，校验每组产物，并将其作为临时工作流产物上传。相关变更推送到 `master` 后，工作流会把两组产物和 `SHA256SUMS` 发布为无签名 GitHub Release。tag 为 `desktop-v<version>-g<完整 commit SHA>`，标题为 `DeepSeek Harness Desktop v<version> (<commit 前 12 个字符>)`。
 
 组合包包含仓库许可证、生成的 [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md)、Web distribution，以及 desktop 包的生产 `dependencies`。该列表是闭合的 Host peer 图：`electron-builder` 只跟随 `dependencies`，因此 `runProfile` 会加载的每个 workspace 包——包括 Service Definition peer——都必须写在这里。CI 在打包前对该 manifest 运行 `verify-runtime-closure`。原生 Node addon 与可执行文件会在其 loader 需要文件系统路径时从 ASAR 解包。
 
@@ -46,5 +46,5 @@ pnpm --dir apps/desktop run build
 ## 已知限制
 
 - **产物未签名**：代码签名与公证被有意排除，因此预计会出现平台信任警告。
-- **没有 updater**：交付更新需要另行决定签名与发布方案。
+- **没有 updater**：GitHub Releases 分发安装程序，但应用不会发现或应用更新。
 - **拒绝外部导航**：应用不会从 renderer 导航推断可信用户手势，因此不会自动打开外部链接。

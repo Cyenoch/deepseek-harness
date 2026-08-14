@@ -37,7 +37,7 @@ Build unsigned native artifacts on the target operating system:
 pnpm --dir apps/desktop run build
 ```
 
-`electron-builder` writes artifacts to `apps/desktop/release/`: DMG and ZIP on macOS, AppImage and DEB on Linux, and NSIS EXE and MSI on Windows. `pnpm --dir apps/desktop run pack` creates an unpacked application for local inspection. The desktop workflow builds macOS arm64/x64, Linux x64, and Windows x64 on matching native runners, verifies each artifact pair, and uploads it for inspection without publishing.
+`electron-builder` writes artifacts to `apps/desktop/release/`: DMG and ZIP on macOS, AppImage and DEB on Linux, and NSIS EXE and MSI on Windows. `pnpm --dir apps/desktop run pack` creates an unpacked application for local inspection. The desktop workflow builds the supported macOS arm64 and Windows x64 targets on the standard GitHub-hosted `macos-14` and `windows-2025` runners, verifies each artifact pair, and uploads it as a temporary workflow artifact. After a relevant push to `master`, it publishes both pairs plus `SHA256SUMS` as an unsigned GitHub Release. The tag is `desktop-v<version>-g<full commit SHA>` and the title is `DeepSeek Harness Desktop v<version> (<first 12 commit characters>)`.
 
 Bundles include the repository license, generated [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md), the Web distribution, and the desktop package's production `dependencies`. That list is the closed Host peer graph: `electron-builder` follows `dependencies` only, so every workspace package `runProfile` loads — including Service Definition peers — is declared there. CI runs `verify-runtime-closure` against this manifest before packaging. Native Node addons and executables are unpacked from ASAR where their loaders require filesystem paths.
 
@@ -46,5 +46,5 @@ Before `runProfile`, main prepends `<application path>/node_modules` to `NODE_PA
 ## Known limitations
 
 - **Unsigned artifacts** — code signing and notarization are intentionally absent, so platform trust warnings are expected.
-- **No updater** — update delivery requires a separate signing and release decision.
+- **No updater** — GitHub Releases distribute installers, but the application neither discovers nor applies updates.
 - **External navigation is denied** — the application does not infer a trustworthy user gesture from renderer navigation and therefore does not open external links automatically.

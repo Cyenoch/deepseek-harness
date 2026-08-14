@@ -10,21 +10,21 @@ Status: implemented
 
 ## 决策
 
-三个必需的 Linux 工作作业、独立的原生 Windows 作业，以及 `all checks passed` 判定作业（若不随切换，即使全部工作作业通过，它仍会滞留在故障池的队列中）——各自通过仓库变量解析运行器池，且开关按平台拆分，使一个平台的故障不会重定向另一个平台。三个 Linux 工作作业与 `all checks passed` 判定作业（其 `needs` 是必需的 Linux 工作作业，且运行在 `vm-backup` 池上）通过 `DSH_CI_FAILOVER_LINUX` 解析；原生 Windows 作业通过 `DSH_CI_FAILOVER_WINDOWS` 解析。变量不存在（正常）时它们运行在托管企业池上；由任何具备写权限的协作者设为 `selfhosted` 时，对应作业切换到公司自有的自托管池：`DSH_CI_FAILOVER_LINUX` 下，Linux 作业与判定作业切到 `vm-backup` 池，覆盖率与快照的并发降到共享虚拟机上限，并跳过托管路径的 pnpm 缓存恢复；`DSH_CI_FAILOVER_WINDOWS` 下，原生 Windows 作业切到 `dsh-win-ci` 池。每个开关都是写者可管理的仓库状态而非一次合并，因此在所有检查都是红色时仍然有效。自有池的就绪状态由 `serial / linux (self-hosted standby)` 与 `serial / windows (self-hosted standby)` 通道持续验证——每次 master 推送都在其上运行完整的未分片聚合流程。
+三个必需的 Linux 工作作业、独立的原生 Windows 作业，以及 `all checks passed` 判定作业（若不随切换，即使全部工作作业通过，它仍会滞留在故障池的队列中）——各自通过仓库变量解析运行器池，且开关按平台拆分，使一个平台的故障不会重定向另一个平台。三个 Linux 工作作业与 `all checks passed` 判定作业（其 `needs` 是必需的 Linux 工作作业，且运行在 `vm-backup` 池上）通过 `DSH_CI_FAILOVER_LINUX` 解析；原生 Windows 作业通过 `DSH_CI_FAILOVER_WINDOWS` 解析。变量不存在（正常）时它们运行在托管企业池上；由任何具备写权限的协作者设为 `selfhosted` 时，对应作业切换到公司自有的自托管池：`DSH_CI_FAILOVER_LINUX` 下，Linux 作业与判定作业切到 `vm-backup` 池，覆盖率与快照的并发降到共享虚拟机上限，并跳过托管路径的 pnpm 缓存恢复；`DSH_CI_FAILOVER_WINDOWS` 下，原生 Windows 作业切到 `dsh-win-ci` 池。每个开关都是写者可管理的仓库状态而非一次合并，因此在所有检查都是红色时仍然有效。[热备选择启用决策](2026-08-14-opt-in-self-hosted-standby-ci.md)保留这些就绪通道，同时避免未配置相应池的仓库请求这些运行器。
 
-`ci.yml` 只豁免一个事件不做取消（`${{ github.event_name != 'push' }}`），因此一次 master 推送不会取消上一次推送留下的、仍在运行的演练。每次演练以单门禁工作进程执行完整的未分片聚合流程，耗时长于 master 合并的间隔；在无条件取消下，演练会在得出结论前被后续运行取代，该通道无法产出供响应者查看的就绪证据。
+当 `DSH_ENABLE_SELFHOSTED_STANDBY` 为 `true` 时，`ci.yml` 豁免推送运行不做 `cancel-in-progress`，因此一次 master 推送不会取消上一次推送留下的、仍在运行的演练。每次演练以单门禁工作进程执行完整的未分片聚合流程，耗时长于 master 合并的间隔；在无条件取消下，演练会在得出结论前被后续运行取代，该通道无法产出供响应者查看的就绪证据。变量未设置或为其他值时，两条演练均跳过，后续推送会取消被取代的运行。
 
-这项豁免比「演练总能跑完」要窄，有两点限制。其一，GitHub 每个组只保留一个待运行条目，更新的待运行条目会顶掉更早的，繁忙时段中间的推送运行仍会以 `cancelled` 结束。其二，该表达式是针对**新触发的运行**求值的，因此自身事件不是 `push` 的运行——例如在 master 上派发的基准测试，与演练共用 `CI-<ref>` 组——求值为 `true`，会取消正在运行中的演练。这属于罕见的手动操作，且下一次 master 推送即可恢复证据，因此不值得为它再加机制。这项豁免换来的是该通道**周期性**地得出结论，而这正是它能作为证据的前提。
+启用后的豁免比「演练总能跑完」要窄，有两点限制。其一，GitHub 每个组只保留一个待运行条目，更新的待运行条目会顶掉更早的，繁忙时段中间的推送运行仍会以 `cancelled` 结束。其二，该表达式是针对**新触发的运行**求值的，因此自身事件不是 `push` 的运行——例如在 master 上派发的基准测试，与演练共用 `CI-<ref>` 组——求值为 `true`，会取消正在运行中的演练。这属于罕见的手动操作，且下一次选择启用的 master 推送即可恢复证据，因此不值得为它再加机制。这项豁免换来的是该通道**周期性**地得出结论，而这正是它能作为证据的前提。
 
-这个决定必须放在工作流级：取消作用于被取代的整个运行，作业级 `concurrency` 组并不能豁免其所属作业。采用否定式写法而非仅指名 `pull_request`，是有实质作用的：后者会连 `workflow_dispatch` 一起停止取消，而每次运行器基准测试会在 master 上的同一并发组内同时占用 12 台大规格运行器、最长 15 分钟，届时重复派发会排在演练之前，而不是替换掉已过时的测量。成本之所以可控，是因为一次 master 推送只承载 `wine-apt-cache` 和这两条演练；其余作业都受拉取请求门控、`workflow_dispatch` 门控或 `if: false`，并且 `scripts/ci-workflow.spec.ts` 会锁定这个集合——按条件精确匹配，因为否定式事件判断会包含它所排除的事件名——使新的推送可达作业无法悄悄开始累积未取消的运行。
+这个决定必须放在工作流级：取消作用于被取代的整个运行，作业级 `concurrency` 组并不能豁免其所属作业。采用否定式写法而非仅指名 `pull_request`，是有实质作用的：后者会连 `workflow_dispatch` 一起停止取消，而每次运行器基准测试会在 master 上的同一并发组内同时占用 12 台大规格运行器、最长 15 分钟，届时重复派发会排在演练之前，而不是替换掉已过时的测量。启用热备时，一次 master 推送只承载 `wine-apt-cache` 和这两条演练；其余作业都受拉取请求门控、`workflow_dispatch` 门控或 `if: false`，并且 `scripts/ci-workflow.spec.ts` 会锁定这个集合——按条件精确匹配，因为否定式事件判断会包含它所排除的事件名——使新的推送可达作业无法悄悄开始累积未取消的运行。
 
 ### 自有池是什么
 
-`vm-backup`：一台 64 核虚拟机，6 个常驻 systemd 管理的运行器实例。其镜像必须预装 Playwright Chromium 的 Linux 系统软件包；CI 会下载锁文件选定的浏览器，但绝不在这台持久化共享主机上运行 `apt`。切换前先看 `serial / linux (self-hosted standby)` 最近一次运行：其聚合流程包含浏览器回放，因此绿色热备同时验证常规容量和这项浏览器先决条件。
+`vm-backup`：一台 64 核虚拟机，6 个常驻 systemd 管理的运行器实例。其镜像必须预装 Playwright Chromium 的 Linux 系统软件包；CI 会下载锁文件选定的浏览器，但绝不在这台持久化共享主机上运行 `apt`。启用热备后，切换前先看 `serial / linux (self-hosted standby)` 最近一次运行：其聚合流程包含浏览器回放，因此绿色热备同时验证常规容量和这项浏览器先决条件。
 
 #### Windows 池
 
-`dsh-win-ci`：公司内部 Windows CI 服务器（一台 96 核 / 580 GB 机器）上 32 个常驻运行器实例（计划任务 `GH-Runner-01`…`GH-Runner-32`）。标签：`[self-hosted, dsh-win-ci, windows]`。镜像必须预装 Node 24、pnpm、Git（Git Bash 在 `PATH` 上，即 `C:\Program Files\Git\bin`——`bash` 工具按名称 spawn `bash`）、PowerShell 7，并为符号链接支持启用开发人员模式。切换前先看 `serial / windows (self-hosted standby)` 最近一次运行：绿色热备验证该池能端到端执行 `check:ci:windows-complete`。
+`dsh-win-ci`：公司内部 Windows CI 服务器（一台 96 核 / 580 GB 机器）上 32 个常驻运行器实例（计划任务 `GH-Runner-01`…`GH-Runner-32`）。标签：`[self-hosted, dsh-win-ci, windows]`。镜像必须预装 Node 24、pnpm、Git（Git Bash 在 `PATH` 上，即 `C:\Program Files\Git\bin`——`bash` 工具按名称 spawn `bash`）、PowerShell 7，并为符号链接支持启用开发人员模式。启用热备后，切换前先看 `serial / windows (self-hosted standby)` 最近一次运行：绿色热备验证该池能端到端执行 `check:ci:windows-complete`。
 
 ### 切换步骤（任何具备写权限的协作者，约 1 分钟，无需合并）
 
@@ -40,7 +40,7 @@ Status: implemented
 
 ## 切换期间的容量
 
-6 个常驻实例可承接正常 PR 流量（该池平时唯一的稳态负载是每次 master 推送一个串行热备作业，故障切换时几乎全池可用）。若仍出现排队，用组织级注册 token（组织 Settings → Actions → Runners → New runner）追加注册实例。复制现有 runner 目录时**必须排除身份文件**——`rsync -a --exclude '.runner*' --exclude '.credentials*' --exclude '_diag' --exclude '_work' <src>/ <dst>/`（通配同时排除 `.runner_migrated`/`.credentials_migrated`——GitHub 会在迁移过的运行器上写入这些文件，它们同样会触发 already-configured 拒绝）——再跑 `config.sh`（原样拷贝 `.runner`/`.credentials` 会使其以 "already configured" 拒绝），然后**启动监听器**：`sudo ./svc.sh install ubuntu && sudo ./svc.sh start`。仅注册不会上线；只有启动了服务的 runner 才会增加容量。每个约一分钟。
+6 个常驻实例可承接正常 PR 流量。启用热备时，该池平时的稳态负载是每次 master 推送一个串行热备作业，故障切换时几乎全池可用；禁用热备时没有这项负载。若仍出现排队，用组织级注册 token（组织 Settings → Actions → Runners → New runner）追加注册实例。复制现有 runner 目录时**必须排除身份文件**——`rsync -a --exclude '.runner*' --exclude '.credentials*' --exclude '_diag' --exclude '_work' <src>/ <dst>/`（通配同时排除 `.runner_migrated`/`.credentials_migrated`——GitHub 会在迁移过的运行器上写入这些文件，它们同样会触发 already-configured 拒绝）——再跑 `config.sh`（原样拷贝 `.runner`/`.credentials` 会使其以 "already configured" 拒绝），然后**启动监听器**：`sudo ./svc.sh install ubuntu && sudo ./svc.sh start`。仅注册不会上线；只有启动了服务的 runner 才会增加容量。每个约一分钟。
 
 
 ### 切回
@@ -55,8 +55,8 @@ Status: implemented
 
 **通过合并一次工作流改动来切换池。** 否决，因为触发切换的故障状态恰恰是任何 PR 都无法合并的状态：必需检查正是失败的那些。仓库变量是写者可管理的状态，重跑即生效，无需合并。
 
-**让自托管池长期处于必需路径中。** 否决，因为这是拿托管池的可用性去换自有虚拟机的可用性，只是搬移了单点故障而非增加回退。这些变量让托管池保持主路径，自托管池作为一个经过验证、一步即可启用的热备；按平台拆分意味着一个平台的故障不会重定向另一个平台。
+**让自托管池长期处于必需路径中。** 否决，因为这是拿托管池的可用性去换自有虚拟机的可用性，只是搬移了单点故障而非增加回退。故障切换变量让托管池保持主路径，而独立的热备选择启用开关可在事故前验证自托管池；两套机制都按平台拆分，因此一个平台的故障不会重定向另一个平台。
 
 ## 后果
 
-从托管池故障中恢复只需切换受影响平台的变量（任何写者可设）加一次重跑，关键路径上没有合并。代价是每个平台都要维护第二套运行器拓扑：热备通道在每次 master 推送时都运行它们，避免故障切换目标变得陈旧；而 `ci.yml` 中的并发与缓存恢复分支带有一条 `selfhosted` 支路（仅 Linux），必须与托管支路保持同步。按平台拆分开关多了一个需要管理的变量，但把每个开关的影响范围限定在单个平台的作业上。
+从托管池故障中恢复只需切换受影响平台的变量（任何写者可设）加一次重跑，关键路径上没有合并。代价是每个平台都要维护第二套运行器拓扑：启用热备时，通道会在每次 master 推送时运行这些池；禁用时，响应者必须先选择启用并获得新的绿色证据，再依赖故障切换目标。`ci.yml` 中的并发与缓存恢复分支带有一条 `selfhosted` 支路（仅 Linux），必须与托管支路保持同步。按平台拆分开关多了一个需要管理的变量，但把每个开关的影响范围限定在单个平台的作业上。

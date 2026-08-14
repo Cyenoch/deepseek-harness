@@ -16,7 +16,7 @@ Status: implemented
 
 ## 决策
 
-[CI](../../../../.github/workflows/ci.yml) 为拉取请求事件与 master 推送事件赋予互补的职责。拉取请求在 GitHub 标准托管容量上运行合并后的 Linux 和由 Wine 承载的 Windows 作业，以及 Node 兼容性与 Python 约定；一个独立的原生 Windows 作业会报告完整的 Windows 清单，但不参与必需聚合流程。向 `master` 推送时，当前启用的参考作业是公司自有 `vm-backup` 池上的 `serial / linux (self-hosted standby)` 和 `dsh-win-ci` 池上的 `serial / windows (self-hosted standby)`——这些热备演练持续验证[故障切换手册](2026-07-26-ci-failover-runbook.md)所描述的切换目标。标准托管的 `serial / linux`、`serial / macos` 和 `serial / windows` 定义仍处于禁用状态，并由 `TODO(hosted-serial-ci)` 标记，直到其可移植容量恢复。各自独立的作业定义有意显式保留简短的代码检出、运行时设置和依赖锁定的安装步骤，而不是用矩阵或可复用工作流隐藏操作系统差异。`workflow_dispatch` 仅用于运行器基准测试。
+[CI](../../../../.github/workflows/ci.yml) 为拉取请求事件与 master 推送事件赋予互补的职责。拉取请求在 GitHub 标准托管容量上运行合并后的 Linux 和由 Wine 承载的 Windows 作业，以及 Node 兼容性与 Python 约定；一个独立的原生 Windows 作业会报告完整的 Windows 清单，但不参与必需聚合流程。向 `master` 推送时，公司自有 `vm-backup` 池上的 `serial / linux (self-hosted standby)` 和 `dsh-win-ci` 池上的 `serial / windows (self-hosted standby)` 仅在 `DSH_ENABLE_SELFHOSTED_STANDBY` 为 `true` 时运行——这些按需启用的热备演练验证[故障切换手册](2026-07-26-ci-failover-runbook.md)所描述的切换目标，详见[按需启用热备决策](2026-08-14-opt-in-self-hosted-standby-ci.md)。变量未设置或为其他值时，两个作业均跳过，因此默认的 master 推送不会请求这些运行器。标准托管的 `serial / linux`、`serial / macos` 和 `serial / windows` 定义仍处于禁用状态，并由 `TODO(hosted-serial-ci)` 标记，直到其可移植容量恢复。各自独立的作业定义有意显式保留简短的代码检出、运行时设置和依赖锁定的安装步骤，而不是用矩阵或可复用工作流隐藏操作系统差异。`workflow_dispatch` 仅用于运行器基准测试。
 
 每个参考作业均在不设置任何分片选择器的情况下运行 `pnpm run check:ci`。`DSH_GATE_CONCURRENCY=1` 使顶层聚合每次只执行一个已经就绪的门禁；覆盖率、快照回放、built-bin 冒烟测试和发布验证的 worker 数量也设为 1。各参考作业可以彼此并行，但每台主机上的仓库门禁都串行运行且完整执行。Linux 在回放快照前安装 bubblewrap，Windows 则在安装采用符号链接的工作区前启用开发人员模式。
 

@@ -48,7 +48,7 @@ macOS 上主 `BrowserWindow` 使用 `hiddenInset`，红绿灯按钮位于 `x=12`
 
 桌面产物大于系统 WebView 壳，因为它交付 Chromium 与 Electron。打包现在只遵循一份 JavaScript 依赖图与一个应用生命周期；renderer 仍与载体无关，浏览器 profile 继续持有 HTTP／WebSocket 访问。
 
-当前发布产物无签名，也不含 updater。签名、公证与更新策略仍属于分发工作，并不是应用运行时的隐含行为。
+[桌面发布工作流](../process/2026-08-14-unsigned-desktop-github-releases.md)会发布无签名的 Windows x64 与 macOS arm64 安装程序。应用不包含 updater；签名、公证与自动更新策略仍是独立的分发决策，而不是隐含的运行时行为。
 
 ## Testing
 

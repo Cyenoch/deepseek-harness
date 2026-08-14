@@ -27,7 +27,7 @@ describe('CI workflow', () => {
     }
   })
 
-  it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {
+  it('keeps required Windows coverage, hosted failover, and opt-in upstream standby', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')
     if (!isRecord(workflow.jobs)
       || !isRecord(workflow.jobs.windows)
@@ -81,8 +81,8 @@ describe('CI workflow', () => {
     expect(wineAptCache.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
     expect(wineAptCache['runs-on']).toBe('ubuntu-latest')
 
-    // serial-windows: master-only standby, self-hosted, non-blocking.
-    expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+    // serial-windows: upstream standby, opt-in, self-hosted, non-blocking.
+    expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master' && vars.DSH_ENABLE_SELFHOSTED_STANDBY == 'true'")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
 
@@ -105,36 +105,26 @@ describe('CI workflow', () => {
     expect(aggregate['runs-on']).toContain('vm-backup')
   })
 
-  it('exempts push from cancellation, so one master merge does not cancel the running drill', () => {
+  it('cancels superseded runs unless upstream self-hosted standby is enabled', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')
     if (!isRecord(workflow.jobs) || !isRecord(workflow.concurrency)) {
       throw new TypeError('CI workflow must define jobs and a workflow-level concurrency block')
     }
 
-    // Cancellation applies to the whole superseded RUN, so this has to be
-    // decided at workflow level and gated on the event: a job-level group
-    // cannot exempt its job from its run being cancelled. Only push is exempt —
-    // a drill takes longer than the interval between master merges. The negated
-    // form is load-bearing: `== 'pull_request'` would also stop cancelling
-    // workflow_dispatch, and a re-dispatched runner benchmark holds up to 12
-    // larger runners for 15 minutes in this same group on master. The
-    // expression is evaluated against the NEWLY TRIGGERED run, so a dispatch on
-    // master still cancels a mid-flight drill; the runbook records that bound.
-    expect(workflow.concurrency['cancel-in-progress']).toBe("${{ github.event_name != 'push' }}")
+    expect(workflow.concurrency['cancel-in-progress'])
+      .toBe("${{ vars.DSH_ENABLE_SELFHOSTED_STANDBY != 'true' || github.event_name != 'push' }}")
 
-    // Neither drill may carry a job-level group: it would not exempt the job
-    // from run-scoped cancellation.
     for (const name of ['serial-linux-selfhosted', 'serial-windows']) {
       const job = workflow.jobs[name]
       if (!isRecord(job)) throw new TypeError(`${name} must be defined`)
       expect(job.concurrency).toBeUndefined()
-      // Both stay master-push-only; that is what makes the push carve-out safe.
-      expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+      expect(job.if)
+        .toBe("github.event_name == 'push' && github.ref == 'refs/heads/master' && vars.DSH_ENABLE_SELFHOSTED_STANDBY == 'true'")
     }
 
-    // What bounds the cost of exempting push: a master push may only carry the
-    // cache seeder and the two drills. Any job reachable on push would start
-    // accumulating uncancelled runs, so the set is pinned here.
+    // With upstream standby enabled, only the cache seeder and two drills may
+    // run on push; any additional push-reachable job would accumulate while
+    // cancellation is disabled.
     //
     // Classification is an exact allowlist of the conditions in use, not a
     // substring match: `github.event_name != 'pull_request'` mentions
@@ -158,10 +148,9 @@ describe('CI workflow', () => {
       .sort()
     expect(pushReachable).toEqual(['serial-linux-selfhosted', 'serial-windows', 'wine-apt-cache'])
 
-    // Why workflow_dispatch must keep cancelling: each benchmark fans out to a
-    // dozen larger runners at once, in this same group on master. If it stopped
-    // cancelling, a re-dispatch would queue ahead of a drill instead of
-    // replacing the stale measurement.
+    // Manual benchmarks always cancel stale runs. When standby is enabled,
+    // this also prevents a re-dispatch on master from queueing ahead of a
+    // drill.
     for (const name of ['larger-runner-benchmark', 'consolidated-runner-benchmark']) {
       const job = workflow.jobs[name]
       if (!isRecord(job) || !isRecord(job.strategy)) {

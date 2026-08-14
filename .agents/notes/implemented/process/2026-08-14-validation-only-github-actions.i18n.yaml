@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-14-validation-only-github-actions.md
-2026-08-14-validation-only-github-actions.md: 54311cdafa6f1e08454930185185b8fb6f37864f
-2026-08-14-validation-only-github-actions.zh.md: 6a59bfe1f21c0308d68ce53df3a8387bf96b0b87
+2026-08-14-validation-only-github-actions.md: cb8b3e80d47577060257cd7581eb0053fb059fac
+2026-08-14-validation-only-github-actions.zh.md: c26f7b7d531b626932929852dd68bba188c6de43
