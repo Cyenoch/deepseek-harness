@@ -417,17 +417,22 @@ export type HostConnectionTransport = 'web' | 'electron'
 
 ## `@deepseek-ai/dsh-client-hmr`
 
-需要：`clientModuleHost` · `webServer`
+需要：`clientModules`
 
 ```ts config-catalog
 /** Plugin config, validated by the same-named schemastery schema. */
 export interface Config {
   /** Bundle stat-poll interval in milliseconds (default 500, the build-side watcher's polling default). */
   pollIntervalMs?: number
+  /** Rebuild notification carrier (default Web SSE). */
+  transport?: HmrTransport
 }
+
+/** Physical reload-notification carrier selected by the application composition. */
+export type HmrTransport = 'web' | 'electron'
 ```
 
-来源：[`packages/client/hmr/src/index.ts:31`](../packages/client/hmr/src/index.ts)
+来源：[`packages/client/hmr/src/index.ts:36`](../packages/client/hmr/src/index.ts)
 
 <a id="deepseek-aidsh-code-runtime-worker-thread"></a>
 

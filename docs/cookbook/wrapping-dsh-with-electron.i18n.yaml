@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/cookbook/wrapping-dsh-with-electron.md
-wrapping-dsh-with-electron.md: 5c56ec75485e84401268ffe4dba55e5a52a5a25d
-wrapping-dsh-with-electron.zh.md: 7ba0e17dae8910fd2052d7b2cb38bb07e3a5e1c5
+wrapping-dsh-with-electron.md: d1f9e55dcc5ef9a67ecee9398cce83fdeb352ddd
+wrapping-dsh-with-electron.zh.md: 16481350789f80e37c8df8cc42b42b1d5787b4f2

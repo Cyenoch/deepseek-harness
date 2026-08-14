@@ -415,17 +415,22 @@ Source: [`packages/client/connection/src/index.ts:60`](../packages/client/connec
 
 ## `@deepseek-ai/dsh-client-hmr`
 
-Requires: `clientModules` · `webServer`
+Requires: `clientModules`
 
 ```ts config-catalog
 /** Plugin config, validated by the same-named schemastery schema. */
 export interface Config {
   /** Bundle stat-poll interval in milliseconds (default 500, the build-side watcher's polling default). */
   pollIntervalMs?: number
+  /** Rebuild notification carrier (default Web SSE). */
+  transport?: HmrTransport
 }
+
+/** Physical reload-notification carrier selected by the application composition. */
+export type HmrTransport = 'web' | 'electron'
 ```
 
-Source: [`packages/client/hmr/src/index.ts:31`](../packages/client/hmr/src/index.ts)
+Source: [`packages/client/hmr/src/index.ts:36`](../packages/client/hmr/src/index.ts)
 
 <a id="deepseek-aidsh-code-runtime-worker-thread"></a>
 

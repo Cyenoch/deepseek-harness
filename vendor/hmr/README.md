@@ -17,8 +17,10 @@ spelling even when Windows supplied an 8.3 alias.
 
 - `@cordisjs/plugin-loader`
 - `@cordisjs/plugin-timer`
-- A runtime that exposes Node's internal module loader. The package throws if
-  the loader service has no internal module loader available.
+- Node's internal module loader for non-empty module roots. A config-only
+  instance (`root: []`) works without it.
+- `process.argv[1]` only when classifying a CLI entry as external. Embedders
+  without a script path use an empty main-entry externals set.
 
 ## Usage
 

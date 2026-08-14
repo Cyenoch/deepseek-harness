@@ -38,7 +38,7 @@ Electron API client 始终在 `http://dsh.internal` 上构造 Host URL。全局 
 
 Cordis Loader 通常使用 Node internal ESM loader 导入 package 并执行 module HMR。Electron 不暴露该 internal service。公共 fallback 通过锚定在配置树 `ctx.baseUrl` 的 `createRequire` 解析非相对插件名，再导入解析结果。该锚点不可省略：profile 安装的 package 必须优先于应用 package；改用 `import(name)` 会从 Loader package 而不是配置所有者处解析。
 
-配置监听和 module hot reload 的要求不同。显式创建且 `root: []` 的 HMR 实例只通过文件系统监听 `cordis.patch.yml`，不依赖 Node internal。非空 module root 仍然需要 internal loader；缺失时在启动阶段失败。把 profile 目录作为 HMR `base` 传入；否则进程级 `chdir()` 会移动被监听路径。
+配置监听和 module hot reload 的要求不同。显式创建且 `root: []` 的 HMR 实例只通过文件系统监听 `cordis.patch.yml`，不依赖 Node internal。打包后的嵌入方也可能没有 `process.argv[1]`；此时只监视配置的实例会把主入口 externals 视为空集，而不是解析一个伪造的脚本路径。非空 module root 仍然需要 internal loader；缺失时在启动阶段失败。把 profile 目录作为 HMR `base` 传入；否则进程级 `chdir()` 会移动被监听路径。
 
 浏览器构建把 Loader fallback 的 `node:module`、`node:path` 和 `node:url` import alias 到浏览器 stub。客户端模块系统注入 `loader.internal` 后不会到达这些 stub；stub 会直接失败，或只实现构建所需的解析行为。删除这些 alias 会让 Vite externalize Node builtin，并导致生产构建失败。
 
@@ -63,7 +63,7 @@ Electron 应用的大部分实现都是新增代码，但以下既有 DSH surfac
 | `apps/web/index.html`; `apps/web/src/main.ts`; `apps/web/vite.config.ts`; `apps/web/src/node-module-stub.ts`; `apps/web/package.json`; `apps/web/tsconfig.json` | 保留可重定位的生产资源、严格 CSP、preload manifest 注入、Loader builtin alias、client-connection dependency、desktop e2e Host program 和 Connection client compiler reference。 | 同一份 frontend build 无法服务两种载体、Vite 因 Node builtin 失败、客户端依赖图与 manifest 竞争，或静态 program 漏掉 renderer/desktop 集成。 |
 | `packages/client/connection` source、manifest 和 compiler face | 保留 `web | electron` 物理承载层区分、共享 Fetch dispatcher、类型化 bridge export、URL rewrite、pull-stream 实现，以及 client/Host compiler entry。 | Electron 回退到 HTTP/WebSocket、载体信任规则退化为 Web `trustedHosts`，或发布文件漏掉 bridge 代码。 |
 | `vendor/loader/src/config/tree.ts`; `vendor/loader/src/config/utils.ts` | 保留以配置为锚点的公共解析和 lazy JavaScript evaluator 创建逻辑。vendor sync 后重新应用 [`vendor/README.md`](../../vendor/README.md) 中对应的修改记录。 | 已打包插件从错误所有者处解析，或 CSP 在 module import 阶段阻止 renderer。 |
-| `vendor/hmr/src/index.ts` | 保持仅监听配置的 `root: []` 不依赖 module-loader internal；保留对非空 module root 的检查。sync 后重新应用 local-modification log 条目。 | Electron boot 因 `--expose-internals` 失败，或 module HMR 在缺少所需 cache data 时运行。 |
+| `vendor/hmr/src/index.ts` | 保持仅监听配置的 `root: []` 不依赖 module-loader internal，保留对非空 module root 的检查，并在嵌入方没有 `process.argv[1]` 时留下空的主入口 externals。sync 后重新应用 local-modification log 条目。 | Electron boot 因 `--expose-internals` 或 `path.resolve(undefined)` 失败，或 module HMR 在缺少所需 cache data 时运行。 |
 | `packages/sandbox/sandbox`、`packages/sandbox/sandbox-local`、`packages/shell/*-local`、`packages/shell/*-sandbox` | 保留 `ConfinedArgv.environment`，并把它分层传递到 foreground 和 background spawn。 | Windows 在 Node mode 下运行 ACL runner 时启动 Electron GUI。 |
 | `packages/client/modules/src/index.ts` | 保持客户端依赖图组合不依赖可选的 Web 发布；Electron 通过 `dsh://bundle` 读取 `graph()` 和 `clientPath()`。 | 禁用 `webServer` 后 registry 一直 pending，或 renderer boot manifest 所需的依赖图消失。 |
 | `packages/client/ui-layout`、`packages/client/ui-sidebar`、`packages/session-query/session-log-export` | 保留 macOS hidden-inset 拖动区域和 traffic-light 间距，以及由 preload 持有的 session export 原生保存路径。 | 无边框窗口无法拖动、chrome 遮挡 sidebar，或 `dsh://app` export 没有结果。 |
@@ -78,6 +78,7 @@ Electron 应用的大部分实现都是新增代码，但以下既有 DSH surfac
 | 窗口打开，但 `#root` 为空 | `dsh://app` MIME type、Vite relative base、CSP 和 eager `new Function` 创建。 |
 | `dsh://app` 下的客户端记录 `/api` 404 | Electron Host URL 固定和同文档 Fetch rewrite。 |
 | Boot 报告 `--expose-internals` | fallback HMR 实例必须使用 `root: []`；没有 Node internal 时不支持 module root。 |
+| Packaged boot 报告 `The "paths[0]" argument must be of type string` | 只监视配置的 HMR 主入口遍历必须容忍缺失的 `process.argv[1]`。 |
 | Packaged boot 从 profile path 报告 `ERR_MODULE_NOT_FOUND` | Desktop dependency closure、`NODE_PATH` 初始化和 Loader 的 `ctx.baseUrl` 锚点。 |
 | Main 记录 Electron binary downloader 或 `__dirname` 错误 | `electron` dependency 被 bundle 到 ESM main。 |
 | Windows 为 sandbox command 打开另一个应用窗口 | `ELECTRON_RUN_AS_NODE=1` 没有传递给受限 runner child。 |

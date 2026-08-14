@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-14-packaged-electron-hmr-script-path.md
+2026-08-14-packaged-electron-hmr-script-path.md: 8e0d627f9077aacb9874ff209c4598d2bbeaab08
+2026-08-14-packaged-electron-hmr-script-path.zh.md: cebd8a6ce8ae11f709f846e7a0b442e5b59e3194

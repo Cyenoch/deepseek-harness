@@ -88,6 +88,28 @@ describe('HMR exact config paths', () => {
     }
   })
 
+  it('starts a config-only watcher when the process has no script path', { timeout: 20_000 }, async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-no-script-'))
+    const filename = join(dir, 'plugins.yml')
+    const snapshot = process.argv.slice()
+    process.argv.length = 1
+    try {
+      const ctx = await bootHmr(dir, [], undefined, false)
+      const observed: string[] = []
+      try {
+        await ctx.hmr.registerConfig(filename, () => { observed.push(readFileSync(filename, 'utf8')) })
+        writeFileSync(filename, 'no-script')
+        await eventually(() => observed.includes('no-script'), 'HMR did not observe config creation without process.argv[1]')
+      } finally {
+        await ctx.fiber.dispose()
+      }
+    } finally {
+      process.argv.length = 0
+      process.argv.push(...snapshot)
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('collapses filesystem aliases before registering an exact watch', async () => {
     const target = mkdtempSync(join(tmpdir(), 'dsh-hmr-canonical-'))
     const alias = `${target}-alias`

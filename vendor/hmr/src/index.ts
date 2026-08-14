@@ -226,8 +226,12 @@ class Hmr extends Service {
 
     // Collect externals before opening the watcher so every post-ready change
     // is observed by listeners that already have their classification state.
-    const mainUrl = pathToFileURL(resolve(process.argv[1])).href
-    const mainJob = this.internal?.loadCache.get(mainUrl)
+    // Packaged Electron and other embedders omit the CLI script path; `resolve`
+    // requires a string, and a missing entry only means an empty externals set.
+    const entryPath = process.argv[1]
+    const mainJob = typeof entryPath === 'string'
+      ? this.internal?.loadCache.get(pathToFileURL(resolve(entryPath)).href)
+      : undefined
     if (mainJob) {
       this.externals = await loadDependencies(mainJob)
     } else {
