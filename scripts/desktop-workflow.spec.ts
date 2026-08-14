@@ -11,6 +11,9 @@ const REQUIRED_PATHS = [
   'packages/**',
   'native/**',
   'package.json',
+  'scripts/smoke-desktop-native-module.ts',
+  'scripts/verify-desktop-artifacts.ts',
+  'scripts/verify-runtime-closure.ts',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
   'tsconfig*.json',
@@ -97,6 +100,18 @@ describe('Electron desktop workflow', () => {
       'node-version': '${{ env.PRIMARY_NODE_VERSION }}',
       cache: 'pnpm',
     })
+    expect(namedStep(steps, 'Configure electron-builder cache').run)
+      .toBe('echo "ELECTRON_BUILDER_CACHE=${RUNNER_TEMP}/electron-builder-cache" >> "$GITHUB_ENV"')
+    expect(namedStep(steps, 'Restore electron-builder downloads')).toMatchObject({
+      uses: 'actions/cache@v4',
+      with: {
+        path: '${{ runner.temp }}/electron-builder-cache',
+        key: "desktop-electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}",
+      },
+    })
+    const manifest = JSON.parse(readFileSync(resolve('apps/desktop/package.json'), 'utf8')) as unknown
+    if (!isRecord(manifest) || !isRecord(manifest.build)) throw new TypeError('desktop manifest must define build')
+    expect(manifest.build.npmRebuild).toBe(false)
     expect(namedStep(steps, 'Install (immutable)').run).toBe('pnpm install --frozen-lockfile')
     expect(namedStep(steps, 'Verify desktop runtime closure').run)
       .toBe('pnpm exec tsx scripts/verify-runtime-closure.ts --manifest=apps/desktop/package.json')
@@ -107,6 +122,8 @@ describe('Electron desktop workflow', () => {
       .toBe('pnpm --dir apps/desktop exec electron-builder ${{ matrix.builder-args }}')
     expect(namedStep(steps, 'Verify artifact set').run)
       .toContain('scripts/verify-desktop-artifacts.ts')
+    expect(namedStep(steps, 'Verify packaged native module').run)
+      .toBe('pnpm exec tsx scripts/smoke-desktop-native-module.ts --target="$TARGET" apps/desktop/release')
     expect(usesStep(steps, 'actions/upload-artifact@').uses).toBe('actions/upload-artifact@v6')
     expect(usesStep(steps, 'actions/upload-artifact@').with).toEqual({
       name: 'dsh-desktop-${{ matrix.target }}',
@@ -118,6 +135,7 @@ describe('Electron desktop workflow', () => {
       ].join('\n')}\n`,
       'if-no-files-found': 'error',
       'retention-days': 7,
+      'compression-level': 0,
     })
   })
 

@@ -13,6 +13,9 @@ on:
       - 'packages/**'
       - 'native/**'
       - 'package.json'
+      - 'scripts/smoke-desktop-native-module.ts'
+      - 'scripts/verify-desktop-artifacts.ts'
+      - 'scripts/verify-runtime-closure.ts'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'tsconfig*.json'
@@ -26,6 +29,9 @@ on:
       - 'packages/**'
       - 'native/**'
       - 'package.json'
+      - 'scripts/smoke-desktop-native-module.ts'
+      - 'scripts/verify-desktop-artifacts.ts'
+      - 'scripts/verify-runtime-closure.ts'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'tsconfig*.json'
@@ -75,6 +81,16 @@ jobs:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
 
+      - name: Configure electron-builder cache
+        shell: bash
+        run: echo "ELECTRON_BUILDER_CACHE=${RUNNER_TEMP}/electron-builder-cache" >> "$GITHUB_ENV"
+
+      - name: Restore electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/electron-builder-cache
+          key: desktop-electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Install (immutable)
         shell: bash
         run: pnpm install --frozen-lockfile
@@ -100,6 +116,12 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: pnpm exec tsx scripts/verify-desktop-artifacts.ts --target="$TARGET" apps/desktop/release
 
+      - name: Verify packaged native module
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: pnpm exec tsx scripts/smoke-desktop-native-module.ts --target="$TARGET" apps/desktop/release
+
       - uses: actions/upload-artifact@v6
         with:
           name: dsh-desktop-${{ matrix.target }}
@@ -110,6 +132,7 @@ jobs:
             apps/desktop/release/*.msi
           if-no-files-found: error
           retention-days: 7
+          compression-level: 0
 
   release:
     name: Release

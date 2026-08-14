@@ -14,6 +14,8 @@ The repository's package, Python, Landlock, and documentation workflows are inte
 
 The [desktop workflow](../../../../.github/workflows/desktop.yml) is the native build, validation, and publication owner. Pull requests and manual dispatches build the supported macOS arm64 and Windows x64 artifact pairs on the standard GitHub-hosted `macos-14` and `windows-2025` runners for temporary inspection. A relevant push to `master` adds a release job after both native builds succeed.
 
+Build jobs cache Electron runtime and electron-builder tool downloads by runner OS, architecture, and `pnpm-lock.yaml`. The desktop package disables electron-builder's native dependency rebuild because `node-pty` ships the required macOS arm64 and Windows x64 prebuilds and the ASAR policy already unpacks them. Each matrix leg executes the packaged Electron binary with `ELECTRON_RUN_AS_NODE=1`, loads `node-pty` through `app.asar`, and spawns a native shell before accepting the artifacts. Already-compressed installers and archives use artifact upload compression level zero.
+
 Master-push runs use the full commit SHA in their concurrency group and are not cancelled by later runs. Pull-request and manual runs remain grouped by ref and cancel stale work, so a later merge cannot terminate an earlier commit's release after its native builds have started.
 
 The release job downloads only the macOS arm64 DMG/ZIP and Windows x64 NSIS/MSI workflow artifacts, requires all four nonempty files, and publishes them with `SHA256SUMS`. It receives job-scoped `contents: write`; build jobs and the workflow default retain `contents: read`. It uses the repository token through the GitHub CLI and receives no signing, notarization, registry, or other publication credential.
@@ -40,4 +42,4 @@ The application has no updater and does not consume release metadata. Publishing
 
 ## Testing
 
-`scripts/desktop-workflow.spec.ts` pins master concurrency, the publication guard, job-scoped write permission, supported release subset, immutable naming, checksum generation, prerelease classification, rerun behavior, and absence of signing or registry credentials. Each native matrix leg verifies its artifact pair before upload, so the release job can only consume artifacts from a successful build run.
+`scripts/desktop-workflow.spec.ts` pins master concurrency, the publication guard, job-scoped write permission, supported release subset, immutable naming, checksum generation, prerelease classification, rerun behavior, download-cache keys, native rebuild exclusion, the packaged native-module smoke, and absence of signing or registry credentials. Each native matrix leg loads the packaged `node-pty` prebuild, spawns a shell, and verifies its artifact pair before upload, so the release job can only consume artifacts from a successful build run.

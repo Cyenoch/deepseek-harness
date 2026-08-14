@@ -124,7 +124,7 @@
     "appId": "com.deepseek.dsh",
     "productName": "DeepSeek Harness",
     "asar": true,
-    "npmRebuild": true,
+    "npmRebuild": false,
     "electronLanguages": [
       "en",
       "zh-CN"
