@@ -14,7 +14,7 @@ Status: implemented
 
 [桌面工作流](../../../../.github/workflows/desktop.yml)负责原生构建、验证与发布。Pull request 与手动派发会使用 GitHub 标准托管的 `macos-14` 和 `windows-2025` runner 构建受支持的 macOS arm64 与 Windows x64 产物组，供临时检查。相关变更推送到 `master` 时，两项原生构建成功后会追加一个 release job。
 
-构建 job 按 runner 操作系统、架构与 `pnpm-lock.yaml` 缓存 Electron runtime 和 electron-builder 工具下载。desktop 包禁用 electron-builder 的原生依赖 rebuild，因为 `node-pty` 已随包提供所需的 macOS arm64 与 Windows x64 prebuild，且 ASAR 策略已将其解包。每个矩阵项都会设置 `ELECTRON_RUN_AS_NODE=1` 执行打包后的 Electron 二进制文件，通过 `app.asar` 加载 `node-pty`，并启动原生 shell，成功后才接受产物。已经压缩的安装程序与归档使用零级工作流产物压缩。
+构建 job 按 runner 操作系统、架构与 `pnpm-lock.yaml` 缓存 Electron runtime 和 electron-builder 工具下载。desktop 包禁用 electron-builder 的原生依赖 rebuild，因为 `node-pty` 已随包提供所需的 macOS arm64 与 Windows x64 prebuild，且 ASAR 策略已将其解包。包过滤器会排除 `node-pty/build`，防止 host 或更早的 Electron 构建遮蔽目标 prebuild。每个矩阵项都会设置 `ELECTRON_RUN_AS_NODE=1` 执行打包后的 Electron 二进制文件，通过 `app.asar` 加载 `node-pty`，并启动原生 shell，成功后才接受产物。已经压缩的安装程序与归档使用零级工作流产物压缩。
 
 Master 推送流程会在并发组中使用完整 commit SHA，且不会被后续流程取消。Pull request 与手动流程仍按 ref 分组并取消陈旧工作，因此较晚的合并无法在原生构建启动后终止较早 commit 的 release。
 
@@ -42,4 +42,4 @@ Release job 只下载 macOS arm64 DMG/ZIP 与 Windows x64 NSIS/MSI 工作流产�
 
 ## 测试
 
-`scripts/desktop-workflow.spec.ts` 钉住 master 并发行为、发布 guard、job 级写权限、受支持的发布子集、不可变命名、校验和生成、prerelease 分类、重新运行行为、下载缓存键、排除原生 rebuild、打包后的原生模块冒烟验证，以及不使用签名或 registry 凭据。每个原生矩阵项都会加载打包后的 `node-pty` prebuild、启动 shell，并在上传前校验自己的产物组，因此 release job 只能使用成功构建流程产生的产物。
+`scripts/desktop-workflow.spec.ts` 钉住 master 并发行为、发布 guard、job 级写权限、受支持的发布子集、不可变命名、校验和生成、prerelease 分类、重新运行行为、下载缓存键、排除原生 rebuild 与陈旧 build、打包后的原生模块冒烟验证，以及不使用签名或 registry 凭据。每个原生矩阵项都会加载打包后的 `node-pty` prebuild、启动 shell，并在上传前校验自己的产物组，因此 release job 只能使用成功构建流程产生的产物。

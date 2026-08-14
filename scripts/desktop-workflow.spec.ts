@@ -112,6 +112,7 @@ describe('Electron desktop workflow', () => {
     const manifest = JSON.parse(readFileSync(resolve('apps/desktop/package.json'), 'utf8')) as unknown
     if (!isRecord(manifest) || !isRecord(manifest.build)) throw new TypeError('desktop manifest must define build')
     expect(manifest.build.npmRebuild).toBe(false)
+    expect(manifest.build.files).toContain('!**/node-pty/build{,/**}')
     expect(namedStep(steps, 'Install (immutable)').run).toBe('pnpm install --frozen-lockfile')
     expect(namedStep(steps, 'Verify desktop runtime closure').run)
       .toBe('pnpm exec tsx scripts/verify-runtime-closure.ts --manifest=apps/desktop/package.json')

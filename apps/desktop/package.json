@@ -139,7 +139,8 @@
       "ui/**/*",
       "build/icon.png",
       "build/trayTemplate*.png",
-      "package.json"
+      "package.json",
+      "!**/node-pty/build{,/**}"
     ],
     "extraResources": [
       {
