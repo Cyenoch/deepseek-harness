@@ -115,7 +115,7 @@ interface RunnerFailureRule {
 }
 ```
 
-`ConfinedArgv` 是消费方实际 spawn 的内容。除了替换后的 argv，它还携带后端的强制执行事实和两种正交的 stderr 分类器。`denialSignatures` 用于识别沙箱正常工作时受限命令被阻止的情况。`runnerFailureRules` 用于识别沙箱 runner 在执行命令之前拒绝或失败的情况；消费方应先检查后者，将其作为沙箱基础设施故障上报，而非普通任务失败。
+`ConfinedArgv` 是消费方实际 spawn 的内容。除替换 argv 外，它还携带 runner 要求的 environment 条目、后端 enforcement 事实与两组彼此正交的 stderr 分类器。Environment map 叠加在 caller value 之后，因此由 Electron 承载的 Windows runner 可以只在受限 child 上设置 `ELECTRON_RUN_AS_NODE=1`，而不改变 desktop application process。`denialSignatures` 表示 sandbox 正常工作时，受限命令自身遭到阻止；`runnerFailureRules` 表示 sandbox runner 在执行命令之前拒绝启动或失败。消费方先检查后者，并把它暴露为 sandbox 基础设施故障，而不是普通任务失败。
 
 ```ts type-equiv
 /**
@@ -126,6 +126,8 @@ interface RunnerFailureRule {
 interface ConfinedArgv {
   /** The wrapped argv (runner, profile, separator, then the caller's argv). */
   argv: string[]
+  /** Environment entries required by the runner process, layered after caller values. */
+  environment?: Readonly<Record<string, string>>
   /** How completely the selected backend enforces the policy's file effects. */
   enforcement: SandboxEnforcement
   /**
@@ -184,7 +186,7 @@ Abstract process-sandbox service. confine must return enforcing argv or fail clo
 abstract confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv
 ```
 
-Source: [`packages/sandbox/sandbox/src/index.ts:158`](../../packages/sandbox/sandbox/src/index.ts)
+Source: [`packages/sandbox/sandbox/src/index.ts:160`](../../packages/sandbox/sandbox/src/index.ts)
 
 <a id="ctxsandboxpolicy--sandboxpolicyservice"></a>
 

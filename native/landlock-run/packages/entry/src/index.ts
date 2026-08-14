@@ -9,13 +9,15 @@
  * impossible. Policy stays with the consumer: this package does not know
  * what a "sandbox mode" is, only which paths are granted read or write.
  *
- * Deliberately no environment-variable overrides anywhere in this module:
- * which binary confines a process must never be decidable by the ambient
- * environment. Test injection is by function parameter.
+ * `DSH_LANDLOCK_RUN_PATH` is the desktop disk override. A nonblank value must
+ * name an absolute regular file or {@link launcherPath} throws; the npm
+ * platform package is not consulted. Unset, empty, or whitespace-only values
+ * keep platform-package resolution. Test injection is by function parameter.
  */
 import { spawnSync } from 'node:child_process'
+import { statSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** The launcher binary's file name inside each platform package's `bin/`. */
@@ -52,13 +54,17 @@ export interface LauncherGrants {
 }
 
 /**
- * Path of the launcher binary for this host: resolved from the per-platform
- * npm package `@deepseek-ai/node-addon-landlock-run-<platform>-<arch>` (npm's
- * `os`/`cpu` fields make installers fetch only the matching one). When the
- * package is not resolvable — a platform without one, or an install that
- * skipped the optional dependency — the returned fallback path points inside
- * this package's own `node_modules` and simply never exists. Existence is
- * deliberately not checked either way: {@link probe} is the single
+ * Path of the launcher binary for this host.
+ *
+ * `DSH_LANDLOCK_RUN_PATH` overrides the npm platform package when nonblank:
+ * the value must be an absolute regular file, or this function throws. A
+ * missing, relative, or non-file value never falls back. Unset, empty, and
+ * whitespace-only values keep platform-package resolution so an off-Linux
+ * desktop sentinel (`''`) does not throw. When the package is not
+ * resolvable — a platform without one, or an install that skipped the
+ * optional dependency — the returned fallback path points inside this
+ * package's own `node_modules` and simply never exists. Existence is
+ * deliberately not checked on the unset path: {@link probe} is the single
  * availability signal (a missing binary probes `unusable` the same way an
  * unenforcing kernel does).
  * @param resolvePackageJson - test hook over `require.resolve` (the default
@@ -69,6 +75,8 @@ export interface LauncherGrants {
 export function launcherPath(
   resolvePackageJson: (specifier: string) => string = createRequire(import.meta.url).resolve,
 ): string {
+  const configured = process.env.DSH_LANDLOCK_RUN_PATH?.trim()
+  if (configured) return requireConfiguredLandlockPath(configured)
   const platformPackage = `@deepseek-ai/node-addon-landlock-run-${process.platform}-${process.arch}`
   try {
     return join(dirname(resolvePackageJson(`${platformPackage}/package.json`)), 'bin', LAUNCHER_BIN)
@@ -80,6 +88,23 @@ export function launcherPath(
     // confines), and nonexistent exactly when the package is absent.
     return fileURLToPath(new URL(`../node_modules/${platformPackage}/bin/${LAUNCHER_BIN}`, import.meta.url))
   }
+}
+
+/**
+ * Accept a nonblank `DSH_LANDLOCK_RUN_PATH` only when it names an absolute regular file.
+ * @param configured - the trimmed environment value.
+ * @returns the same path after validation.
+ */
+function requireConfiguredLandlockPath(configured: string): string {
+  if (!isAbsolute(configured)) {
+    throw new Error(`DSH_LANDLOCK_RUN_PATH is set to ${JSON.stringify(configured)}, which is not an absolute regular file`)
+  }
+  try {
+    if (statSync(configured).isFile()) return configured
+  } catch {
+    // Missing path and unreadable path fail the same way: the variable is set.
+  }
+  throw new Error(`DSH_LANDLOCK_RUN_PATH is set to ${JSON.stringify(configured)}, which is not an absolute regular file`)
 }
 
 /**

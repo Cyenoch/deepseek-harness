@@ -31,27 +31,61 @@ assert.deepEqual(
 assert.deepEqual(grantArgs({ readWrite: ['/a'], readOnly: ['/b'] }), ['--ro', '/b', '--rw', '/a']);
 
 // --- launcherPath: resolves the platform package next to its package.json ---
-const platformPackage = `@deepseek-ai/node-addon-landlock-run-${process.platform}-${process.arch}`;
-const resolvedViaSeam = launcherPath((specifier) => {
-  assert.equal(specifier, `${platformPackage}/package.json`);
-  return path.join('/fake-install', specifier);
-});
-assert.equal(resolvedViaSeam, path.join('/fake-install', platformPackage, 'bin', LAUNCHER_BIN));
+{
+  const previous = process.env.DSH_LANDLOCK_RUN_PATH;
+  delete process.env.DSH_LANDLOCK_RUN_PATH;
+  const platformPackage = `@deepseek-ai/node-addon-landlock-run-${process.platform}-${process.arch}`;
+  const resolvedViaSeam = launcherPath((specifier) => {
+    assert.equal(specifier, `${platformPackage}/package.json`);
+    return path.join('/fake-install', specifier);
+  });
+  assert.equal(resolvedViaSeam, path.join('/fake-install', platformPackage, 'bin', LAUNCHER_BIN));
 
-// --- launcherPath: unresolvable package falls back to an absolute, package-boundary path ---
-const fallback = launcherPath(() => {
-  throw new Error('not installed');
-});
-assert.ok(path.isAbsolute(fallback), 'fallback path must be absolute');
-assert.ok(
-  fallback.includes(path.join('node_modules', ...platformPackage.split('/'), 'bin', LAUNCHER_BIN)),
-  `fallback must point at the platform package layout: ${fallback}`,
-);
+  // --- launcherPath: unresolvable package falls back to an absolute, package-boundary path ---
+  const fallback = launcherPath(() => {
+    throw new Error('not installed');
+  });
+  assert.ok(path.isAbsolute(fallback), 'fallback path must be absolute');
+  assert.ok(
+    fallback.includes(path.join('node_modules', ...platformPackage.split('/'), 'bin', LAUNCHER_BIN)),
+    `fallback must point at the platform package layout: ${fallback}`,
+  );
 
-// --- launcherPath: default resolution agrees with this workspace's layout ---
-const defaultPath = launcherPath();
-assert.ok(path.isAbsolute(defaultPath));
-assert.ok(defaultPath.endsWith(path.join('bin', LAUNCHER_BIN)), defaultPath);
+  // --- launcherPath: default resolution agrees with this workspace's layout ---
+  const defaultPath = launcherPath();
+  assert.ok(path.isAbsolute(defaultPath));
+  assert.ok(defaultPath.endsWith(path.join('bin', LAUNCHER_BIN)), defaultPath);
+  if (previous === undefined) delete process.env.DSH_LANDLOCK_RUN_PATH;
+  else process.env.DSH_LANDLOCK_RUN_PATH = previous;
+}
+
+// --- launcherPath: DSH_LANDLOCK_RUN_PATH must be an absolute regular file ---
+{
+  const previous = process.env.DSH_LANDLOCK_RUN_PATH;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nalr-env-launcher-'));
+  const configured = path.join(dir, 'landlock-run');
+  fs.writeFileSync(configured, 'launcher');
+  process.env.DSH_LANDLOCK_RUN_PATH = configured;
+  assert.equal(launcherPath(() => { throw new Error('must not resolve the platform package'); }), configured);
+  process.env.DSH_LANDLOCK_RUN_PATH = path.join(dir, 'missing');
+  assert.throws(() => launcherPath(), /DSH_LANDLOCK_RUN_PATH/);
+  process.env.DSH_LANDLOCK_RUN_PATH = 'relative/landlock-run';
+  assert.throws(() => launcherPath(), /DSH_LANDLOCK_RUN_PATH/);
+  process.env.DSH_LANDLOCK_RUN_PATH = dir;
+  assert.throws(() => launcherPath(), /DSH_LANDLOCK_RUN_PATH/);
+  const platformPackage = `@deepseek-ai/node-addon-landlock-run-${process.platform}-${process.arch}`;
+  for (const blank of ['', '   ']) {
+    process.env.DSH_LANDLOCK_RUN_PATH = blank;
+    const viaBlank = launcherPath((specifier) => {
+      assert.equal(specifier, `${platformPackage}/package.json`);
+      return path.join('/fake-install', specifier);
+    });
+    assert.equal(viaBlank, path.join('/fake-install', platformPackage, 'bin', LAUNCHER_BIN));
+  }
+  if (previous === undefined) delete process.env.DSH_LANDLOCK_RUN_PATH;
+  else process.env.DSH_LANDLOCK_RUN_PATH = previous;
+  fs.rmSync(dir, { recursive: true, force: true });
+}
 
 // --- probe: a missing launcher is unusable, indistinguishable from an unenforcing kernel ---
 assert.equal(probe(path.join(os.tmpdir(), 'nalr-no-such-launcher')), 'unusable');

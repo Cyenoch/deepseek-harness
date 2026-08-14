@@ -16,6 +16,8 @@ Status: implemented
 
 ## 决策
 
+本说明中有关 GitHub 发布归属与 job 的细节由[仅验证的 GitHub Actions](2026-08-14-validation-only-github-actions.md)取代。本说明继续负责三个包族的边界、版本、包元数据、发布脚本以及无凭据的打包与已安装包验证。
+
 ### 三条独立序列
 
 `packages/`、`vendor/`、`native/` 各自一条 bump 序列、各自一次发布，不共享版本号、不共享触发、不互相等待。发 dsh 不重发 vendor，发 vendor 不重发 native。

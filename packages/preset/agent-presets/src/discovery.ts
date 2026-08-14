@@ -14,6 +14,7 @@
  * @module @deepseek-ai/dsh-agent-presets/discovery
  */
 
+import type { Dirent } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { load } from 'js-yaml'
@@ -138,7 +139,7 @@ async function isFile(path: string): Promise<boolean> {
  */
 export async function scanRoot(root: PresetRoot): Promise<AgentPreset[]> {
   const dir = resolve(expandHomePath(root.path))
-  let children
+  let children: Dirent[]
   try {
     children = await readdir(dir, { withFileTypes: true })
   } catch (error) {
@@ -147,22 +148,18 @@ export async function scanRoot(root: PresetRoot): Promise<AgentPreset[]> {
   }
   const found: AgentPreset[] = []
   for (const child of children) {
-    if (!child.isDirectory() || !PRESET_ID.test(child.name)) continue
+    if (!PRESET_ID.test(child.name) || !child.isDirectory()) continue
     const directory = join(dir, child.name)
     const path = join(directory, COMPOSITION_FILE)
     const broken = await isFile(path)
       ? await compositionProblem(path)
       : `the composition file ${COMPOSITION_FILE} is missing — the directory still occupies the id; delete it or restore the file`
-    // Display text only, and never fatal: a preset with unreadable metadata
-    // still mounts, it just shows its id.
     const metadata = await readPresetMetadata(directory)
     found.push({
       id: child.name, trust: root.trust, path, ...metadata,
       ...broken === undefined ? {} : { broken },
     })
   }
-  // Declared order first so the shipped set reads by capability; everything
-  // else falls back to the id, which keeps authored presets stable.
   return found.sort((left, right) => {
     const byOrder = (left.order ?? Number.POSITIVE_INFINITY) - (right.order ?? Number.POSITIVE_INFINITY)
     return byOrder === 0 ? left.id.localeCompare(right.id) : byOrder

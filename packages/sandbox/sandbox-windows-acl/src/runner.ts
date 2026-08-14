@@ -6,9 +6,9 @@
  * straight through), mirrors the child's exit code, and revokes its temp
  * grant on exit (workspace ACEs stay standing as the reuse cache).
  *
- * Stable argv contract (the seam builds it; a native-exe replacement would
- * keep the same contract):
- *   [node, runner.js, '--workspace', <dir>, '--temp', <dir>,
+ * Stable argv contract (the seam builds it; Electron adds
+ * `ELECTRON_RUN_AS_NODE=1` only to this runner child):
+ *   [process.execPath, runner.js, '--workspace', <dir>, '--temp', <dir>,
  *    '--mode', <read-only|workspace-write>,
  *    ['--write-sid', <S-1-4-…>,
  *     '--temp-write-sid', <S-1-4-…>], '--', <argv...>]

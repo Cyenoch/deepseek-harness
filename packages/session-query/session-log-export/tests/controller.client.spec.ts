@@ -133,11 +133,25 @@ describe('SessionLogDownloadController', () => {
 })
 
 describe('browser download helpers', () => {
-  it('sanitizes the archive filename and hands the URL to a download anchor', () => {
+  it('uses the Electron save bridge instead of a browser download', async () => {
+    const saveSessionExport = vi.fn(async () => {})
+    vi.stubGlobal('dshDesktop', { saveSessionExport })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    await downloadUrl('http://dsh.internal/api/session.export?sessionId=a&includeDescendants=true', 'dsh-session-a.zip')
+
+    expect(saveSessionExport).toHaveBeenCalledWith(
+      'http://dsh.internal/api/session.export?sessionId=a&includeDescendants=true',
+      'dsh-session-a.zip',
+    )
+    expect(click).not.toHaveBeenCalled()
+  })
+
+  it('sanitizes the archive filename and hands the URL to a download anchor', async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
 
     expect(sessionLogZipFilename('a/b' as SessionId)).toBe('dsh-session-a_b.zip')
-    downloadUrl('http://host/api/session.export?sessionId=a', 'archive.zip')
+    await downloadUrl('http://host/api/session.export?sessionId=a', 'archive.zip')
     expect(click).toHaveBeenCalledOnce()
     const anchor = click.mock.instances[0] as HTMLAnchorElement
     expect(anchor.href).toBe('http://host/api/session.export?sessionId=a')

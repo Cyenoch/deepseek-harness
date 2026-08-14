@@ -3,7 +3,7 @@
 
 # DSH Base Composition
 
-The dsh-base bundle patch every profile applies first; mode bundles (dsh-web-app, dsh-headless) and the user's profile layer patch over it.
+The dsh-base bundle patch every profile applies first; mode bundles (dsh-web-app, dsh-headless, dsh-desktop-app) and the user's profile layer patch over it.
 
 ```mermaid
 flowchart LR

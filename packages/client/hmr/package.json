@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-hmr",
-  "description": "Dev-only hot-reload driver for script-loaded client entries: SSE rebuilt frames → invalidate/prefetch → fiber swap through the vendored Loader entry",
+  "description": "Dev-only hot reload for script-loaded client plugins over Web SSE or the Electron manifest carrier",
   "version": "0.1.0-rc.5",
   "publishConfig": {
     "access": "public"

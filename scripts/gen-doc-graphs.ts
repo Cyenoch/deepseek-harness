@@ -514,12 +514,20 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Plain node:http carrier: named-route registry, index transform taps, and the static dist fallback; web-transport plugins register their own routes.',
   },
   {
+    key: 'desktopRuntime',
+    pkg: 'desktop-app',
+    title: 'Electron desktop composition marker',
+    mode: 'core',
+    consumers: ['connection'],
+    note: 'Orders Electron-only consumers after the desktop bundle mounts; native lifecycle and IPC remain owned by the application process.',
+  },
+  {
     key: 'clientModules',
     pkg: 'modules',
     title: 'Client plugin graph host',
     mode: 'core',
     consumers: ['hmr'],
-    note: 'Composes the __DSH_BOOT__ entry graph from an incremental dsh.client scan, serves plugin bundles, and notifies rebuilt/graph-changed subscribers.',
+    note: 'Composes the __DSH_BOOT__ entry graph from an incremental dsh.client scan; Web publishes routes while Electron reads the same graph and bundle paths through its private protocol.',
   },
   {
     key: 'workflowEngine',
@@ -704,7 +712,7 @@ const APP_EXAMPLES = [
     title: 'DSH Base Composition',
     label: 'packages/bundle/base/cordis.patch.yml',
     config: 'packages/bundle/base/cordis.patch.yml',
-    summary: 'The dsh-base bundle patch every profile applies first; mode bundles (dsh-web-app, dsh-headless) and the user\'s profile layer patch over it.',
+    summary: 'The dsh-base bundle patch every profile applies first; mode bundles (dsh-web-app, dsh-headless, dsh-desktop-app) and the user\'s profile layer patch over it.',
   },
   {
     id: 'headless',

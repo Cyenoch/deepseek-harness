@@ -558,14 +558,40 @@ describe('boot', () => {
     }
   })
 
+  it('resolves bare config plugins when Node does not expose its internal ESM loader', async () => {
+    const dir = tmp()
+    const plugin = join(dir, 'node_modules', 'loader-fallback-test')
+    mkdirSync(plugin, { recursive: true })
+    writeFileSync(join(plugin, 'package.json'), JSON.stringify({
+      name: 'loader-fallback-test',
+      type: 'module',
+      exports: './index.mjs',
+    }))
+    writeFileSync(join(plugin, 'index.mjs'), 'export function apply(ctx) { ctx.provide("fallbackPluginLoaded", true) }\n')
+    const configPath = join(dir, 'cordis.yml')
+    writeFileSync(configPath, '- id: fallback\n  name: loader-fallback-test\n')
+
+    const ctx = await boot(NAME, configPath, undefined, (hostCtx) => {
+      hostCtx.loader.internal = undefined
+    })
+    try {
+      expect(ctx.get('fallbackPluginLoaded')).toBe(true)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('can resolve bare plugins from the harness when the config project shadows their package name', async () => {
     const dir = tmp()
     const harness = tmp()
     const absolutePlugin = join(dir, 'absolute.mjs')
     const shadow = join(dir, 'node_modules', '@deepseek-ai', 'dsh-system-prompt')
+    const shadowNested = join(dir, 'node_modules', '@deepseek-ai', 'dsh-nested-test')
     const harnessPlugin = join(harness, 'node_modules', '@deepseek-ai', 'dsh-system-prompt')
-    mkdirSync(shadow, { recursive: true })
-    mkdirSync(harnessPlugin, { recursive: true })
+    const harnessNested = join(harness, 'node_modules', '@deepseek-ai', 'dsh-nested-test')
+    for (const packageDir of [shadow, shadowNested, harnessPlugin, harnessNested]) {
+      mkdirSync(packageDir, { recursive: true })
+    }
     writeFileSync(join(shadow, 'package.json'), JSON.stringify({
       name: '@deepseek-ai/dsh-system-prompt',
       type: 'module',
@@ -583,11 +609,23 @@ describe('boot', () => {
       exports: './index.mjs',
     }))
     writeFileSync(join(harnessPlugin, 'index.mjs'), [
-      'export function apply(ctx) {',
+      'export async function apply(ctx) {',
       '  ctx.provide("harnessPluginLoaded", true)',
+      '  await ctx.loader.create({ name: "@deepseek-ai/dsh-nested-test" })',
       '}',
       '',
     ].join('\n'))
+    for (const [packageDir, service] of [
+      [shadowNested, 'shadowNestedLoaded'],
+      [harnessNested, 'harnessNestedLoaded'],
+    ] as const) {
+      writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
+        name: '@deepseek-ai/dsh-nested-test',
+        type: 'module',
+        exports: './index.mjs',
+      }))
+      writeFileSync(join(packageDir, 'index.mjs'), `export function apply(ctx) { ctx.provide(${JSON.stringify(service)}, true) }\n`)
+    }
     writeFileSync(join(dir, 'relative.mjs'), 'export function apply(ctx) { ctx.provide("relativePluginLoaded", true) }\n')
     writeFileSync(absolutePlugin, 'export function apply(ctx) { ctx.provide("absolutePluginLoaded", true) }\n')
     const entries = [
@@ -617,7 +655,9 @@ describe('boot', () => {
     const ctx = await boot(NAME, hostOwnedPath, undefined, undefined, harnessBaseUrl)
     try {
       expect(ctx.get('harnessPluginLoaded')).toBe(true)
+      expect(ctx.get('harnessNestedLoaded')).toBe(true)
       expect(ctx.get('shadowPluginLoaded')).toBeUndefined()
+      expect(ctx.get('shadowNestedLoaded')).toBeUndefined()
       expect(ctx.get('relativePluginLoaded')).toBe(true)
       expect(ctx.get('absolutePluginLoaded')).toBe(true)
     } finally {

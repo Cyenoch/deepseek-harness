@@ -22,6 +22,19 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
+/*
+ * hiddenInset places the 14px macOS controls 12px below the window edge.
+ * The expanded wordmark's visible ink begins 12px below those controls; the
+ * rail uses the same visible-ink offset for its 24px whale.
+ */
+:global(html[data-dsh-window-chrome='macos-hidden-inset']) .root {
+  padding-top: 16px;
+}
+
+:global(html[data-dsh-window-chrome='macos-hidden-inset']) .root.collapsed {
+  padding-top: 32px;
+}
+
 /* Rail geometry (figma rail spec): 36x36 control boxes centered in the 56px
    rail (10px side padding), 12px vertical rhythm, 18px from the rail top to
    the whale's box (24px to the 24-wide whale glyph itself). */

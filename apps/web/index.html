@@ -2,9 +2,11 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
+    <!-- Shared by HTTP and dsh://app: relative assets and a CSP without unsafe-eval keep one production document valid on both carriers. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' dsh:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; connect-src 'self' http: https: ws: wss:; font-src 'self' data:; worker-src 'self' blob:; frame-src 'self' http: https:" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <title>DeepSeek Harness</title>
   </head>
   <body>

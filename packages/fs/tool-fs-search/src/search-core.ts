@@ -19,6 +19,7 @@
  * @module @deepseek-ai/dsh-tool-fs-search/search-core
  */
 
+import { statSync } from 'node:fs'
 import { isAbsolute, relative, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
@@ -156,21 +157,47 @@ function completeStdout(toolName: string, stdout: SubprocessOutputRead, rawOutpu
 let rgPathPromise: Promise<string> | undefined
 
 /**
- * The packaged ripgrep binary path, resolved lazily once per process.
+ * The ripgrep binary path, resolved lazily once per process.
  *
- * `@vscode/ripgrep` resolves its platform package (`@vscode/ripgrep-<platform>
- * -<arch>`) at module evaluation, so a static import would turn a missing or
- * corrupt platform package (`pnpm install --omit=optional`, partial install)
- * into a failure of the whole Loader composition. Resolving at the call
- * boundary keeps that failure at the first search call as `SEARCH_FAILED` —
- * the package's documented no-load-time-probe contract.
+ * `DSH_RIPGREP_PATH` is an optional deployment override for runtimes that
+ * expose the binary outside normal package resolution. When set, this
+ * function requires an absolute regular file and returns that path. A
+ * missing, relative, or non-file value fails immediately — it never falls
+ * back to `@vscode/ripgrep`. When the variable is unset, `@vscode/ripgrep` resolves
+ * its platform package (`@vscode/ripgrep-<platform>-<arch>`) at module
+ * evaluation, so a static import would turn a missing or corrupt platform
+ * package (`pnpm install --omit=optional`, partial install) into a failure
+ * of the whole Loader composition. Resolving at the call boundary keeps
+ * that failure at the first search call as `SEARCH_FAILED` — the package's
+ * documented no-load-time-probe contract.
  *
- * @returns the packaged binary's absolute path; the memoized promise rejects
- *   when the platform package cannot be resolved.
+ * @returns the configured or packaged binary's absolute path; the promise
+ *   rejects when the configured path is unusable or the platform package
+ *   cannot be resolved.
  */
 export function resolveRgPath(): Promise<string> {
-  rgPathPromise ??= import('@vscode/ripgrep').then(module => module.rgPath)
-  return rgPathPromise
+  const configured = process.env.DSH_RIPGREP_PATH
+  if (configured !== undefined) {
+    return Promise.resolve().then(() => requireConfiguredRgPath(configured))
+  }
+  return rgPathPromise ??= import('@vscode/ripgrep').then(module => module.rgPath)
+}
+
+/**
+ * Accept `DSH_RIPGREP_PATH` only when it names an absolute regular file.
+ * @param configured - the raw environment value.
+ * @returns the same path after validation.
+ */
+function requireConfiguredRgPath(configured: string): string {
+  if (!isAbsolute(configured)) {
+    throw new Error(`DSH_RIPGREP_PATH is set to ${JSON.stringify(configured)}, which is not an absolute regular file`)
+  }
+  try {
+    if (statSync(configured).isFile()) return configured
+  } catch {
+    // Missing path and unreadable path fail the same way: the variable is set.
+  }
+  throw new Error(`DSH_RIPGREP_PATH is set to ${JSON.stringify(configured)}, which is not an absolute regular file`)
 }
 
 /**

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'unsafe-inline'" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeepSeek Harness</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #111113;
+        --fg: #ececef;
+        --muted: #9b9ba3;
+        --danger: #f87171;
+        --panel: #1c1c1f;
+        --border: #2e2e33;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+      }
+      main {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px 20px;
+      }
+      .panel {
+        width: min(40rem, 100%);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 28px 24px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 1.15rem;
+        font-weight: 600;
+      }
+      #status {
+        margin: 0;
+        color: var(--muted);
+      }
+      body[data-state="error"] #status { color: var(--danger); }
+      #detail {
+        margin: 16px 0 0;
+        max-height: 16rem;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--fg);
+      }
+      #detail:empty { display: none; }
+    </style>
+  </head>
+  <body data-state="loading">
+    <main>
+      <section class="panel">
+        <h1>DeepSeek Harness</h1>
+        <p id="status" role="status" aria-live="polite">Starting the local runtime…</p>
+        <pre id="detail"></pre>
+      </section>
+    </main>
+    <script src="./supervisor.js"></script>
+  </body>
+</html>

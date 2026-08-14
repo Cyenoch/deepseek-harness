@@ -1,7 +1,8 @@
 /**
- * Verify that the executable deploy manifest supplies every required workspace
- * peer in its dependency graph. With auto peer installation disabled, a missing
- * root peer can otherwise fail only when Cordis loads the packaged plugin.
+ * Verify that a closed executable manifest supplies every required workspace
+ * peer in its dependency graph. The Python bundled runtime and the private
+ * Electron application both need this: workspace links can hide a missing
+ * root dependency until Cordis loads the packaged plugin.
  */
 import { globSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -65,7 +66,7 @@ for (let index = 0; index < queue.length; index += 1) {
 }
 
 if (failures.length > 0) {
-  console.error('verify-runtime-closure: required workspace peers are missing from python/sdk-runtime dependencies:')
+  console.error(`verify-runtime-closure: required workspace peers are missing from ${values.manifest ?? 'python/sdk-runtime/package.json'} dependencies:`)
   for (const failure of failures) console.error(`  ${failure}`)
   process.exit(1)
 }
@@ -73,7 +74,9 @@ if (failures.length > 0) {
 console.log(`verify-runtime-closure: ${queue.length} workspace packages form a closed runtime dependency graph.`)
 
 async function loadWorkspacePackages(): Promise<Map<string, WorkspacePackage>> {
-  const paths = globSync(['packages/*/*/package.json', 'vendor/*/package.json'], { cwd: root })
+  // apps/desktop is private and build-only, but electron-builder still needs
+  // its complete workspace dependency graph to be auditable here.
+  const paths = globSync(['packages/*/*/package.json', 'vendor/*/package.json', 'apps/*/package.json'], { cwd: root })
     .sort()
     .map(relative => resolve(root, relative))
   const result = new Map<string, WorkspacePackage>()

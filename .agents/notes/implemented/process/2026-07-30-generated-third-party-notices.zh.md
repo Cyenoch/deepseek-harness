@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-[`THIRD_PARTY_NOTICES.md`](../../../../THIRD_PARTY_NOTICES.md) 由 [`scripts/gen-third-party-notices.ts`](../../../../scripts/gen-third-party-notices.ts) 依据各工作区 manifest、`vendor/README.md`、`pyproject.toml` 与 `pnpm-workspace.yaml` 生成。根 README 双语两侧都从「许可证」一节链到该文件。
+[`THIRD_PARTY_NOTICES.md`](../../../../THIRD_PARTY_NOTICES.md) 由 [`scripts/gen-third-party-notices.ts`](../../../../scripts/gen-third-party-notices.ts) 依据各工作区 manifest、`vendor/README.md`、各 `pyproject.toml` 与 `pnpm-workspace.yaml` 生成。Electron 及其打包依赖与其他 JavaScript 依赖一样，经 `apps/desktop/package.json` 与根 npm 锁文件进入。根 README 双语两侧都从「许可证」一节链到该文件；无签名桌面组合包交付同一份生成文件。
 
 **新鲜度会得到维护，而非仅靠校验。** 只要暂存了生成器的任一输入——任何 manifest、工作区声明、根锁文件、`vendor/README.md`、某个 `pyproject.toml`、生成器自身，或持有构建期 pin 的脚本——pre-commit 任务就会重新生成该文件并将其暂存，改依赖的人不必事后再折返跑一次生成器。已提交的字节随后由 [`scripts/gen-third-party-notices.spec.ts`](../../../../scripts/gen-third-party-notices.spec.ts) 断言，而测试 lane 本就会跑这个文件——这项校验不增加门禁进程、不占调度位、也不新增 CI 步骤。需要单独校验时，`pnpm run verify-third-party-notices` 仍然可用。
 
@@ -40,7 +40,7 @@ Claude 分发测试证明：只有精确匹配的直接 SDK 身份会绕过通�
 
 **用专门的 `doc-sync`（文档同步门禁）校验。** 仓库里其他生成产物都是这么把关的，本次改动最初也是这个形态。但它要在本已冗长的矩阵里再占一个门禁进程和一个调度位；更糟的是，它唯一的失败方式，就是在别人推完一个无关的依赖升级几分钟后，通知对方回去重跑一次生成器。改为提交时重新生成消除了这次打断，而把断言放进测试 lane 本就会跑的 spec 里，则以零额外 CI 成本保住了这项保证。
 
-**列出完整传递闭包。** 闭包有数千个包，锁文件里已带精确版本，铺开只会淹没读者真正要评估的直接依赖。文件转而指向锁文件与 `pnpm licenses list`。
+**列出完整传递闭包。** 闭包有数千个包，锁文件里已带精确版本，铺开只会淹没读者真正要评估的直接依赖。文件转而指向 `pnpm-lock.yaml`、`python/sdk/uv.lock` 与 `pnpm licenses list`。
 
 **按 manifest 字段分层（`dependencies` 与 `devDependencies`）。** 机械上最省事，但在真实数据上两个方向都会出错，理由见上文分层段落。
 
@@ -54,7 +54,7 @@ Claude 分发测试证明：只有精确匹配的直接 SDK 身份会绕过通�
 
 此后改动依赖时，重新生成的披露文件会随同一个提交入库。触及 manifest 的提交多付一次生成器运行——约一秒；其余提交不受影响。若禁用钩子提交，代价推迟为一次测试 lane 失败，其报错会指明补救命令。
 
-生成器需要已安装的依赖树，因此比纯源码生成器更重；发布元数据不可用的新包需要补一条 `OVERRIDES`，而不是默默渲染出空白许可证。这两类失败都会明确报错并指出补救方式。
+生成器需要已安装的依赖树，因此比纯源码生成器更重；发布元数据不可用的新包需要补一条 `OVERRIDES`，而不是默默渲染出空白许可证。新增直接桌面 crate 需要一条 `DESKTOP_RUST_METADATA` 记录和一条 `Cargo.lock` 包条目；缺一则生成失败。这些失败都会明确报错并指出补救方式。
 
 分层规则是编码在一个常量里的策略。若新增了不参与交付的工作区区域——第二层测试基础设施、另一个站点——就要同步扩展 `DEV_ONLY_AREAS`，否则其依赖会被当作运行时依赖披露出去。
 

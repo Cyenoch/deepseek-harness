@@ -16,6 +16,7 @@
   },
   "files": [
     "lib/*.js",
+    "lib/profile-boot.js",
     "config"
   ],
   "license": "MIT",
@@ -27,6 +28,7 @@
     "@deepseek-ai/dsh-agent-tool-presentation": "workspace:^",
     "@deepseek-ai/dsh-app-boot": "workspace:^",
     "@deepseek-ai/dsh-base": "workspace:^",
+    "@deepseek-ai/dsh-desktop-app": "workspace:^",
     "@deepseek-ai/dsh-cordis-client-runner": "workspace:^",
     "@deepseek-ai/dsh-client-ui-agent-preset": "workspace:^",
     "@deepseek-ai/dsh-client-ui-cordis": "workspace:^",
@@ -97,5 +99,12 @@
     "@deepseek-ai/dsh-tools": "workspace:^",
     "@types/js-yaml": "^4.0.9",
     "execa": "^10.0.0"
+  },
+  "exports": {
+    "./profile-boot": {
+      "types": "./lib/types/profile-boot.d.ts",
+      "default": "./lib/profile-boot.js"
+    },
+    "./package.json": "./package.json"
   }
 }

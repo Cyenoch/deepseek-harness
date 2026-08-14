@@ -16,6 +16,8 @@ The consolidation must preserve platform selection. The public distribution is d
 
 ## Decision
 
+The protected GitHub publication job described in this note is superseded by [validation-only GitHub Actions](2026-08-14-validation-only-github-actions.md). This note continues to own the in-repository source, workspace, package-family, native-build, and packed-install decisions.
+
 `native/landlock-run` and `native/landlock-run/packages/*` belong to the repository's root pnpm workspace and use the root `pnpm-lock.yaml`. Harness consumers declare `@deepseek-ai/node-addon-landlock-run` with `workspace:*`, so development, type checking, builds, and pull-request tests resolve the entry package from the same checkout. The root TypeScript project graph builds that entry package before consumers, and the repository cleaner owns its direct `lib/` output.
 
 The public npm boundary is three organization-owned packages with one launcher-family version: `@deepseek-ai/node-addon-landlock-run`, `@deepseek-ai/node-addon-landlock-run-linux-x64`, and `@deepseek-ai/node-addon-landlock-run-linux-arm64`. The entry package retains both platform packages as `optionalDependencies`; their `os` and `cpu` manifest fields let npm install only the compatible package. Repository constraints require `publishConfig.access: public` for those three names and require their versions to match the private launcher workspace root. The former unscoped names are not release targets of this repository. These three are no longer the only public packages: the [per-sequence access decision](2026-08-13-public-vendor-and-native-sequences.md) publishes the nine vendored framework packages publicly as well, while the dsh family stays restricted.

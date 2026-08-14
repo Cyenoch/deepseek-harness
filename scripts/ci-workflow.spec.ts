@@ -1,15 +1,15 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
+import { isRecord, loadWorkflow, workflowEvent, workflowJob } from './workflow-spec.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const runnerPrivatePnpmDestination = '${{ runner.temp }}/setup-pnpm'
 
 describe('CI workflow', () => {
   it('isolates every pnpm action setup destination per runner', () => {
-    const workflow: unknown = yaml.load(readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8'))
-    if (!isRecord(workflow) || !isRecord(workflow.jobs)) throw new TypeError('CI workflow must define jobs')
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    if (!isRecord(workflow.jobs)) throw new TypeError('CI workflow must define jobs')
 
     const setups = Object.entries(workflow.jobs).flatMap(([jobName, job]) => {
       if (!isRecord(job) || !Array.isArray(job.steps)) return []
@@ -236,26 +236,21 @@ describe('E2B e2e workflow', () => {
 })
 
 describe('Python release workflows', () => {
-  it('keeps complete wheel validation separate from protected public publication', () => {
+  it('keeps complete wheel validation without public publication', () => {
     const workflow = loadWorkflow('.github/workflows/python-release.yml')
-    const dispatch = workflowEvent(workflow, 'workflow_dispatch')
     const pullRequest = workflowEvent(workflow, 'pull_request')
     const build = workflowJob(workflow, 'build')
     const pythonCompat = workflowJob(workflow, 'python-compat')
     const validate = workflowJob(workflow, 'validate')
-    const publishRuntime = workflowJob(workflow, 'publish-runtime')
-    const publishSdk = workflowJob(workflow, 'publish-sdk')
-    if (!isRecord(dispatch.inputs)
-      || !isRecord(dispatch.inputs.publish)
+    if (!isRecord(workflow.on)
+      || !isRecord(workflow.jobs)
       || !Array.isArray(pythonCompat.steps)
-      || !Array.isArray(validate.steps)
-      || !Array.isArray(publishRuntime.steps)
-      || !Array.isArray(publishSdk.steps)) {
-      throw new TypeError('Python release workflow must define publish input and release steps')
+      || !Array.isArray(validate.steps)) {
+      throw new TypeError('Python package validation workflow must define validation jobs and steps')
     }
-
-    expect(dispatch.inputs.publish).toMatchObject({ type: 'boolean', default: false })
+    expect(workflow.on.workflow_dispatch).toBeNull()
     expect(pullRequest).toEqual({ types: ['labeled'] })
+    expect(Object.keys(workflow.jobs).sort()).toEqual(['build', 'python-compat', 'validate'])
     expect(build).toMatchObject({
       if: "github.event_name == 'workflow_dispatch' || github.event.label.name == 'python-release-dry-run'",
       uses: './.github/workflows/build-exe-for-python-sdk.yml',
@@ -267,51 +262,10 @@ describe('Python release workflows', () => {
     expect(pythonCompat.strategy).toMatchObject({ matrix: { python: ['3.10', '3.14'] } })
     expect(JSON.stringify(pythonCompat.steps)).toContain('deepseek-harness-sdk==${{ steps.compatibility-version.outputs.version }}')
     const validateSteps = JSON.stringify(validate.steps)
-    const authorize = validate.steps.filter(isRecord).find(step => step.name === 'Authorize publication request')
-    if (!isRecord(authorize) || typeof authorize.run !== 'string') {
-      throw new TypeError('Python release validation must authorize publication requests')
-    }
-    expect(validateSteps).toContain('PUBLIC_PYPI_RELEASE_ENABLED')
-    expect(authorize).toMatchObject({
-      env: {
-        PYPI_PUBLISHER_REPOSITORY: '${{ vars.PYPI_PUBLISHER_REPOSITORY }}',
-        REPOSITORY: '${{ github.repository }}',
-      },
-    })
-    expect(authorize.run).toContain('[ "$REPOSITORY" = "$PYPI_PUBLISHER_REPOSITORY" ]')
     expect(validateSteps).toContain('100000000')
-    expect(publishRuntime).toMatchObject({
-      if: "github.event_name == 'workflow_dispatch' && inputs.publish",
-      needs: 'validate',
-      environment: 'pypi-runtime',
-      permissions: { contents: 'read', 'id-token': 'write' },
-    })
-    expect(publishSdk).toMatchObject({
-      if: "github.event_name == 'workflow_dispatch' && inputs.publish",
-      needs: ['validate', 'publish-runtime'],
-      environment: 'pypi',
-      permissions: { contents: 'read', 'id-token': 'write' },
-    })
-    const runtimeSteps = publishRuntime.steps.filter(isRecord)
-    const sdkSteps = publishSdk.steps.filter(isRecord)
-    const runtimePublish = runtimeSteps.find(step => step.name === 'Publish runtime wheels')
-    const sdkPublish = sdkSteps.find(step => step.name === 'Publish SDK wheel')
-    const runtimeHashes = runtimeSteps.find(step => step.name === 'Verify release artifact hashes')
-    const sdkHashes = sdkSteps.find(step => step.name === 'Verify release artifact hashes')
-    expect([...runtimeSteps, ...sdkSteps].some(
-      step => typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@'),
-    )).toBe(false)
-    expect([...runtimeSteps, ...sdkSteps].filter(
-      step => step.uses === 'pypa/gh-action-pypi-publish@release/v1',
-    )).toHaveLength(2)
-    expect(runtimePublish).toMatchObject({
-      with: { 'packages-dir': 'dist/runtime/', attestations: false },
-    })
-    expect(sdkPublish).toMatchObject({
-      with: { 'packages-dir': 'dist/sdk/', attestations: false },
-    })
-    expect(runtimeHashes).toMatchObject({ run: 'cd dist && sha256sum -c SHA256SUMS' })
-    expect(sdkHashes).toMatchObject({ run: 'cd dist && sha256sum -c SHA256SUMS' })
+    expect(validateSteps).toContain('python -m twine check dist/*.whl')
+    expect(validateSteps).toContain('sha256sum *.whl')
+    expect(validateSteps).toContain('actions/upload-artifact@v7')
   })
 
   it('exposes the native wheel builder to the release caller with normalized versions', () => {
@@ -407,27 +361,3 @@ describe('Git hooks', () => {
     }
   })
 })
-
-function loadWorkflow(path: string): Record<string, unknown> {
-  const workflow: unknown = yaml.load(readFileSync(resolve(root, path), 'utf8'))
-  if (!isRecord(workflow)) throw new TypeError(`${path} must define a workflow`)
-  return workflow
-}
-
-function workflowEvent(workflow: Record<string, unknown>, event: string): Record<string, unknown> {
-  if (!isRecord(workflow.on) || !isRecord(workflow.on[event])) {
-    throw new TypeError(`workflow must define the ${event} event`)
-  }
-  return workflow.on[event]
-}
-
-function workflowJob(workflow: Record<string, unknown>, job: string): Record<string, unknown> {
-  if (!isRecord(workflow.jobs) || !isRecord(workflow.jobs[job])) {
-    throw new TypeError(`workflow must define the ${job} job`)
-  }
-  return workflow.jobs[job]
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}

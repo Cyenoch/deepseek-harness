@@ -409,6 +409,14 @@ const reference = [
     section: { root: '开发手册', en: 'Cookbook' },
     order: 4,
   }]),
+  ...pairedPages([{
+    source: 'docs/cookbook/wrapping-dsh-with-electron.md',
+    route: 'reference/cookbook/wrapping-dsh-with-electron.md',
+    label: { root: '用 Electron 包装 DSH', en: 'Wrap DSH with Electron' },
+    sidebar: { root: 'zh-reference', en: 'en-reference' },
+    section: { root: '开发手册', en: 'Cookbook' },
+    order: 5,
+  }]),
 ]
 
 /** A sidebar group, matched to pages by `label`. */

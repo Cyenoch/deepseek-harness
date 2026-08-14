@@ -1,4 +1,4 @@
-/** Host registry and HTTP adapter for generic Connection RPC channels. */
+/** Host registry and Fetch adapter for Web and Electron Connection carriers. */
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
@@ -26,8 +26,16 @@ const INVALID_REQUEST_RPC_ID = RpcId('invalid-request')
 const CHANNEL_PATTERN = /^\/[A-Za-z0-9._~-]+$/
 const ENDPOINT_SEGMENT_PATTERN = /^[A-Za-z0-9_$.-]+$/
 
+/** Physical Host carrier selected by the composing application. */
+export type HostConnectionTransport = 'web' | 'electron'
+
 interface ConnectionRpcInterceptor {
   readonly matches: ConnectionRpcEndpointMatcher
+  readonly fetchHandler: FetchHandler
+  readonly options: ConnectionRpcHandlerOptions
+}
+
+interface ConnectionRpcChannel {
   readonly fetchHandler: FetchHandler
   readonly options: ConnectionRpcHandlerOptions
 }
@@ -35,20 +43,27 @@ interface ConnectionRpcInterceptor {
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Host Connection transport and RPC registrations. */
-    connection: HostConnectionHandle
+    connection: HostConnectionService
   }
 }
 
 /** Host Connection service whose channel registrations belong to the caller fiber. */
 export class HostConnectionService extends Service implements HostConnectionHandle {
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
+  private readonly channels = new Map<string, ConnectionRpcChannel>()
+  private sharedApiHandler: FetchHandler | undefined
 
   /**
-   * Provide the Host half over the active HTTP server.
+   * Provide the Host half over Web routes or Electron IPC.
    * @param ctx - owning Connection plugin context.
-   * @param trustedHosts - deployment authorities accepted by trusted-host channels.
+   * @param trustedHosts - deployment authorities accepted by trusted-host Web channels.
+   * @param transport - physical carrier selected by the application.
    */
-  constructor(ctx: Context, private readonly trustedHosts: readonly string[]) {
+  constructor(
+    ctx: Context,
+    private readonly trustedHosts: readonly string[],
+    private readonly transport: HostConnectionTransport,
+  ) {
     super(ctx, 'connection')
   }
 
@@ -60,6 +75,40 @@ export class HostConnectionService extends Service implements HostConnectionHand
       intercept: (channel, matches, handler, options) =>
         this.registerInterceptor(owner, channel, matches, handler, options),
     }
+  }
+
+  /**
+   * Install the shared `/api` Fetch handler exactly once.
+   * @param handler - API Proxy fallback wrapped with registered interceptors.
+   * @returns effect-scoped disposer.
+   */
+  setSharedApiHandler(handler: FetchHandler): () => Promise<void> {
+    return this.ctx.effect(() => {
+      if (this.sharedApiHandler !== undefined) {
+        throw new Error('connection: shared /api handler already registered')
+      }
+      this.sharedApiHandler = handler
+      return () => { this.sharedApiHandler = undefined }
+    }, 'client-connection: shared /api handler')
+  }
+
+  /**
+   * Dispatch one request from the Electron main process without opening a socket.
+   * @param request - validated internal request received over Electron IPC.
+   * @returns the matching API or generic-channel response, or 404.
+   */
+  fetch(request: Request): Promise<Response> {
+    const pathname = new URL(request.url).pathname
+    if (pathname === API_PATH || pathname.startsWith(`${API_PATH}/`)) {
+      return this.sharedApiHandler?.fetch(request)
+        ?? Promise.resolve(new Response('not found', { status: 404 }))
+    }
+    for (const [channel, registration] of this.channels) {
+      if (pathname === channel || pathname.startsWith(`${channel}/`)) {
+        return registration.fetchHandler.fetch(request)
+      }
+    }
+    return Promise.resolve(new Response('not found', { status: 404 }))
   }
 
   /**
@@ -79,7 +128,9 @@ export class HostConnectionService extends Service implements HostConnectionHand
         if (endpoint === undefined || interceptor === undefined || !interceptor.matches(endpoint)) {
           return fallback.fetch(request)
         }
-        if (interceptor.options.authority === 'loopback' && !isTrustedApiRequest(request, [])) {
+        if (this.transport === 'web'
+          && interceptor.options.authority === 'loopback'
+          && !isTrustedApiRequest(request, [])) {
           return Promise.resolve(new Response('forbidden', { status: 403 }))
         }
         return interceptor.fetchHandler.fetch(request)
@@ -94,8 +145,33 @@ export class HostConnectionService extends Service implements HostConnectionHand
     options: ConnectionRpcHandlerOptions,
   ): () => Promise<void> {
     assertChannel(channel)
-    const trustedHosts = options.authority === 'loopback' ? [] : this.trustedHosts
     const fetchHandler = rpcFetchHandler(channel, handler)
+    return owner.effect(() => {
+      if (this.channels.has(channel)) {
+        throw new Error(`connection: RPC channel ${JSON.stringify(channel)} already registered`)
+      }
+      this.channels.set(channel, { fetchHandler, options })
+      const releaseRoute = this.transport === 'web'
+        ? this.registerWebRoute(owner, channel, fetchHandler, options)
+        : undefined
+      return () => {
+        releaseRoute?.()
+        this.channels.delete(channel)
+      }
+    }, `client-connection: ${channel} rpc channel`)
+  }
+
+  private registerWebRoute(
+    owner: Context,
+    channel: string,
+    fetchHandler: FetchHandler,
+    options: ConnectionRpcHandlerOptions,
+  ): () => void {
+    const webServer = owner.get('webServer')
+    if (webServer === undefined) {
+      throw new Error('connection: Web transport requires ctx.webServer')
+    }
+    const trustedHosts = options.authority === 'loopback' ? [] : this.trustedHosts
     const route: WebRoute = {
       kind: 'prefix',
       path: channel,
@@ -108,10 +184,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
         await bridge(req, res, fetchHandler)
       },
     }
-    return owner.effect(
-      () => owner.webServer.register(route),
-      `client-connection: ${channel} rpc channel`,
-    )
+    return webServer.register(route)
   }
 
   private registerInterceptor(
@@ -134,9 +207,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
         throw new Error(`connection: shared RPC channel ${JSON.stringify(channel)} already has an interceptor`)
       }
       this.interceptors.set(channel, interceptor)
-      return () => {
-        this.interceptors.delete(channel)
-      }
+      return () => { this.interceptors.delete(channel) }
     }, `client-connection: ${channel} rpc interceptor`)
   }
 }

@@ -9,7 +9,7 @@ The project is pre-1.0. Prefer the correct public API over compatibility shims: 
 ## Runtime safety rules
 
 - Every tool must fail closed. If a ruleset cannot be created or the kernel does not enforce it, exit non-zero WITHOUT exec'ing the wrapped command. Never run unconfined as a fallback.
-- Runtime binaries and the entry packages take NO environment-variable overrides: which binary confines a process must never be decidable by the ambient environment. Test injection is by function parameter; the `NALR_*` prefix is for build/test orchestration only.
+- Runtime binaries take no environment-variable overrides. The entry package accepts one desktop disk override, `DSH_LANDLOCK_RUN_PATH`: a nonblank value must name an absolute regular file or `launcherPath()` throws; unset, empty, and whitespace-only values keep platform-package resolution. Test injection is by function parameter; the `NALR_*` prefix is for build/test orchestration only.
 - Kernel UAPI is self-defined in the C source (verbatim from the kernel headers), keeping builds independent of toolchain header vintage and making the definitions part of the audit record.
 - No libraries beyond libc, linked statically against musl. The audit surface of a tool is its C source plus the kernel's stable syscall contract.
 - The CLI contract of each tool ([docs/cli-contract.md](docs/cli-contract.md)) is the cross-repo compatibility contract: argv grammar, exit codes, and report lines change only with a version bump and a changelog entry, and consumers parse them only through the entry package.

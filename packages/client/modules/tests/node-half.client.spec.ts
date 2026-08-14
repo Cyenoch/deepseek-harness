@@ -83,6 +83,25 @@ describe('client bundle activation', () => {
     expect(construct([currentName]).graph().entries.map(entry => entry.id)).toEqual([currentName])
   })
 
+  it('composes the graph without registering Web routes for an embedded carrier', () => {
+    const packageName = '@fixture/electron-client'
+    const clientPath = writePackage(packageName)
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = {}\n')
+    const ctx = new Context()
+    ctx.baseUrl = pathToFileURL(root!).href + '/'
+    ctx.provide('loader', {
+      *entries() {
+        yield { options: { name: packageName }, fiber: {}, disabled: false }
+      },
+    })
+
+    const service = new ClientModuleRegistry(ctx)
+
+    expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+    expect(service.clientPath(packageName)).toBe(clientPath)
+  })
+
   it('groups missing bundles under one source-build instruction with a package/path list', () => {
     const firstName = '@fixture/missing-first'
     const secondName = '@fixture/missing-second'

@@ -1,12 +1,14 @@
 /**
  * HMR plugin, node half: the host end of the dev reload chain. One interval
  * stat-polls every graph row's client bundle (polling by design: network
- * mounts deliver no inotify events), reports content changes through
- * `clientModuleHost.rebuilt(id)`, and serves the `/plugins/events` SSE channel
- * broadcasting graph/rebuilt frames to the browser half (src/client/).
- * The web bundle mounts this row unconditionally: without a rebuild
- * watcher rewriting client bundles, the poll observes no changes and the
- * chain stays idle.
+ * mounts deliver no inotify events) and reports content changes through
+ * `clientModuleHost.rebuilt(id)`. Web deployments additionally serve the
+ * `/plugins/events` SSE channel; Electron renderers read the changing graph
+ * through their existing manifest bridge.
+ *
+ * Both desktop and Web bundles mount this row unconditionally. Without a
+ * rebuild watcher rewriting client bundles, the poll observes no changes and
+ * the chain stays idle.
  */
 import { statSync } from 'node:fs'
 import type { ServerResponse } from 'node:http'
@@ -15,8 +17,8 @@ import z from '@deepseek-ai/schemastery'
 // Empty type imports carry the clientModuleHost/webServer Context merges.
 import type {} from '@deepseek-ai/dsh-client-modules'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import { DEFAULT_POLL_INTERVAL_MS, EVENTS_ENDPOINT } from './events.ts'
 import type { PluginsEventFrame } from './events.ts'
-import { EVENTS_ENDPOINT } from './events.ts'
 
 export type { PluginsEventFrame } from './events.ts'
 export { EVENTS_ENDPOINT } from './events.ts'
@@ -24,17 +26,23 @@ export { EVENTS_ENDPOINT } from './events.ts'
 /** Cordis plugin name. */
 export const name = 'client-hmr'
 
-/** Required services: the web plugin table and the route registry. */
-export const inject = ['clientModules', 'webServer']
+/** Required service: the carrier-independent client plugin table. */
+export const inject = ['clientModules']
 
+
+/** Physical reload-notification carrier selected by the application composition. */
+export type HmrTransport = 'web' | 'electron'
 /** Plugin config, validated by the same-named schemastery schema. */
 export interface Config {
   /** Bundle stat-poll interval in milliseconds (default 500, the build-side watcher's polling default). */
   pollIntervalMs?: number
+  /** Rebuild notification carrier (default Web SSE). */
+  transport?: HmrTransport
 }
 
 export const Config: z<Config> = z.object({
-  pollIntervalMs: z.number().step(1).min(1).default(500),
+  pollIntervalMs: z.number().step(1).min(1).default(DEFAULT_POLL_INTERVAL_MS),
+  transport: z.union(['web', 'electron'] as const).default('web'),
 })
 
 /** Serialize one frame as an SSE data line. */
@@ -57,6 +65,11 @@ interface WatchedBundle {
 export function apply(ctx: Context, config: Config): void {
   // schemastery's .default() guarantees the field is set after validation.
   const pollIntervalMs = config.pollIntervalMs as number
+  const transport = config.transport as HmrTransport
+  const webServer = ctx.get('webServer')
+  if (transport === 'web' && webServer === undefined) {
+    throw new Error('client-hmr: Web transport requires ctx.webServer')
+  }
 
   // --- bundle watch: one HMR-owned stat poll ------------------------------
   const watched = new Map<string, WatchedBundle>()
@@ -145,6 +158,9 @@ export function apply(ctx: Context, config: Config): void {
     }
   }, 'client-hmr: bundle watches')
 
+  if (transport === 'electron') return
+  if (webServer === undefined) throw new Error('client-hmr: Web transport lost ctx.webServer')
+
   // --- /plugins/events SSE channel ----------------------------------------
   const connections = new Set<ServerResponse>()
 
@@ -163,7 +179,7 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   ctx.effect(() => {
-    const disposeRoute = ctx.webServer.register({
+    const disposeRoute = webServer.register({
       kind: 'exact',
       path: EVENTS_ENDPOINT,
       handler: (req, res) => {

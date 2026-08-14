@@ -90,6 +90,9 @@ function npmPackageOf(id: string): string | undefined {
 }
 
 export default defineConfig({
+  // Keep generated asset URLs relative so one production build remains
+  // relocatable under both the HTTP and dsh://app carriers.
+  base: './',
   plugins: [rejectStandaloneServe(), react()],
   build: {
     sourcemap: true,
@@ -136,9 +139,12 @@ export default defineConfig({
     // bundles through the client module system. Order matters — subpath
     // aliases must win over bare-name prefixes.
     alias: [
-      // Browserization of the vendored cordis Loader: its only node-only
-      // import; the two process probes are mapped by `define` below.
+      // Browserization of the vendored cordis Loader: Node builtins it
+      // imports for the public-resolution fallback. The two process probes
+      // are mapped by `define` below.
       { find: /^node:module$/, replacement: src('./src/node-module-stub.ts') },
+      { find: /^node:path$/, replacement: src('./src/node-module-stub.ts') },
+      { find: /^node:url$/, replacement: src('./src/node-module-stub.ts') },
       { find: /^@deepseek-ai\/dsh-client-web$/, replacement: src('../../packages/client/web/src/boot.tsx') },
       { find: /^@deepseek-ai\/dsh-client-web-react$/, replacement: src('../../packages/client/web-react/src/index.ts') },
       { find: /^@deepseek-ai\/dsh-client-ui-slots$/, replacement: src('../../packages/client/ui-slots/src/index.ts') },

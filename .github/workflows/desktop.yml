@@ -1,0 +1,117 @@
+# Unsigned Electron desktop validation. Each artifact is built on its native
+# operating system and retained for inspection; this workflow does not publish.
+name: Desktop
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/desktop.yml'
+      - 'apps/cli/**'
+      - 'apps/desktop/**'
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'native/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig*.json'
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/desktop.yml'
+      - 'apps/cli/**'
+      - 'apps/desktop/**'
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'native/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig*.json'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+  DSH_TELEMETRY_DISABLED: '1'
+  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: macos-arm64
+            runner: node24-macos-arm64
+            builder-args: --mac dmg zip --arm64 --publish never
+          - target: macos-x64
+            runner: node24-macos-x64
+            builder-args: --mac dmg zip --x64 --publish never
+          - target: linux-x64
+            runner: node24-linux-x64
+            builder-args: --linux AppImage deb --x64 --publish never
+          - target: windows-x64
+            runner: node24-win-x64
+            builder-args: --win nsis msi --x64 --publish never
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -yq libfuse2
+
+      - name: Install (immutable)
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify desktop runtime closure
+        shell: bash
+        run: pnpm exec tsx scripts/verify-runtime-closure.ts --manifest=apps/desktop/package.json
+
+      - name: Build Host, renderer, and Electron entries
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm run build
+          pnpm --dir apps/desktop run build:code
+
+      - name: Build unsigned Electron artifacts
+        shell: bash
+        run: pnpm --dir apps/desktop exec electron-builder ${{ matrix.builder-args }}
+
+      - name: Verify artifact set
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: pnpm exec tsx scripts/verify-desktop-artifacts.ts --target="$TARGET" apps/desktop/release
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: dsh-desktop-${{ matrix.target }}
+          path: apps/desktop/release/*
+          if-no-files-found: error
+          retention-days: 7

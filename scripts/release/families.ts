@@ -18,6 +18,10 @@ const ORDER_SECTIONS = ['dependencies', 'optionalDependencies'] as const
 
 /** The workspace root manifest, which is never a release member. */
 const WORKSPACE_ROOT_PACKAGE = '@deepseek-ai/dsh-root'
+/** Manifests the dsh family glob matches that stay build-only, never npm-published. */
+export const DSH_BUILD_ONLY_MANIFESTS: Readonly<Record<string, true>> = {
+  'apps/desktop/package.json': true,
+}
 
 /** One publishable package of a release family. */
 export interface ReleaseMember {
@@ -79,7 +83,7 @@ export abstract class ReleaseFamily {
   /**
    * Discover this family's members.
    * @param root - repository root.
-   * @returns Members sorted by directory, with names validated and deduplicated.
+   * @returns Publishable members sorted by directory, with names validated and deduplicated.
    */
   members(root: string): ReleaseMember[] {
     const manifestPaths = globSync([...this.patterns], { cwd: root }).sort()
@@ -89,6 +93,7 @@ export abstract class ReleaseFamily {
     const seen = new Set<string>()
     for (const manifestPath of manifestPaths) {
       const normalized = manifestPath.replaceAll('\\', '/')
+      if (this.buildOnlyManifests[normalized] === true) continue
       const manifest = readManifest(resolve(root, manifestPath))
       const name = requireString(manifest, 'name', normalized)
       const version = requireString(manifest, 'version', normalized)
@@ -105,6 +110,12 @@ export abstract class ReleaseFamily {
     }
     return members
   }
+
+  /**
+   * Named build-only manifests this family matches but never publishes.
+   * Accidental `private` packages stay members so publication rules fail loud.
+   */
+  protected readonly buildOnlyManifests: Readonly<Record<string, true>> = {}
 
   /**
    * Order members so every package publishes after the family members it depends on.
@@ -198,6 +209,7 @@ class DshFamily extends ReleaseFamily {
   readonly id = 'dsh'
   readonly patterns = ['packages/*/*/package.json', 'apps/*/package.json'] as const
   readonly tagPrefix = 'dsh-v'
+  protected override readonly buildOnlyManifests = DSH_BUILD_ONLY_MANIFESTS
 
   /**
    * Require one version across the family, the way a single tag can name it.

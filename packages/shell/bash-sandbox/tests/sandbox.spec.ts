@@ -109,6 +109,31 @@ describe('the provider hand-off', () => {
     expect(result.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'full' })
   })
 
+  it('layers the provider-required runner environment after caller values', async () => {
+    const returnedArgv = ['bash', '-c', 'true']
+    const { ctx, bash } = await setup({}, () => ({
+      argv: returnedArgv,
+      environment: { ELECTRON_RUN_AS_NODE: '1', DSH_RUNNER_MODE: 'provider' },
+      enforcement: 'full',
+      denialSignatures: UNIX_SIGNATURES,
+      runnerFailureRules: RUNNER_FAILURE,
+    }))
+    const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+    const spec = bash.resolve({
+      command: 'true',
+      env: { ELECTRON_RUN_AS_NODE: 'caller', DSH_RUNNER_MODE: 'caller' },
+      dshEnv: { DSH_RUNNER_MODE: 'trusted' },
+    })
+
+    await bash.run(spec)
+    const process = bash.start(spec)
+    await process.done
+
+    expect(spawn).toHaveBeenCalledTimes(2)
+    expect(spawn.mock.calls[0]?.[0].env).toMatchObject({ ELECTRON_RUN_AS_NODE: '1', DSH_RUNNER_MODE: 'provider' })
+    expect(spawn.mock.calls[1]?.[0].env).toMatchObject({ ELECTRON_RUN_AS_NODE: '1', DSH_RUNNER_MODE: 'provider' })
+  })
+
   it('starts a non-Bash runner before the confined inner Bash evaluates BASH_ENV', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-bash-env-order-'))
     const hook = join(dir, 'hook.sh')

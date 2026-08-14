@@ -72,11 +72,12 @@ export class RepositoryCleaner {
     for (const entry of await readdir(this.root, { withFileTypes: true })) {
       if (entry.isFile() && entry.name.endsWith('.tsbuildinfo')) targets.add(join(this.root, entry.name))
     }
-    await this.addIfPresent(
-      targets,
-      join(this.root, 'native/landlock-run/tsconfig.tsbuildinfo'),
-      canonicalRoot,
-    )
+    await Promise.all([
+      this.addIfPresent(targets, join(this.root, 'native/landlock-run/tsconfig.tsbuildinfo'), canonicalRoot),
+      // electron-builder writes its release directory outside the TypeScript
+      // project-reference graph, so clean must name that output explicitly.
+      this.addIfPresent(targets, join(this.root, 'apps/desktop/release'), canonicalRoot),
+    ])
 
     // The root project-reference graph is the source of truth for live build targets.
     // Each emitting project declares lib/types as outDir; its parent lib also owns

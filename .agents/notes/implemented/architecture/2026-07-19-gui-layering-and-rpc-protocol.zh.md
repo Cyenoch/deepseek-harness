@@ -8,13 +8,13 @@ Status: implemented
 
 ## Problem
 
-需要提供 UI 对接层，除已有 ACP（Agent Client Protocol）/stdio 基线外，还需要 Web（server）、Electron 等其他产品客户端。我们把它们统一称为 Client。希望具备以下能力：
+需要提供超出既有 ACP（Agent Client Protocol）／stdio 基线的 UI 对接层，以服务 Web server、Electron 与后续产品客户端。我们把它们统一称为 Client，并要求具备以下能力：
 - 一个 `dsh` 进程同时支持 `dsh web`（启动）和 `dsh --profile headless`（headless），一个进程两种模式（设计预留）
 - 在 Electron 中使用与 `dsh web` 相同的 Web 技术启动
 
 那么当前的工程代码需要稳定的分层职责模型，便于以后接入各类 client。
 
-同时各消费方的物理通道不同（浏览器 HTTP／WebSocket、进程内 fetch/SSE、将来 IPC），还需要一个通道无关的消息模型和单一约定真源，让「加一个方法」「换一种载体」互不牵连，且 wire 上的每条消息可类型校验、可观测、可对账。
+同时各消费方的物理通道不同（浏览器 HTTP／WebSocket、Electron preload IPC、进程内 fetch/SSE），还需要一个通道无关的消息模型和单一约定真源，让「加一个方法」「换一种载体」互不牵连，且 wire 上的每条消息可类型校验、可观测、可对账。
 
 ## Decision
 
@@ -30,10 +30,10 @@ Status: implemented
 - `apps/` 作为对外导出的应用入口，可以由 Client / Host 混合组装。
     - `apps/web`（`dsh-web-frontend`）是 vite 应用：`dsh-client-web` 导出的壳 API 之上的一层薄 `main.ts`。
     - `apps/cli`（`@deepseek-ai/dsh`）分发命令：`dsh web` = Host + webserver + 构建出的 `dsh-web-frontend` dist；`dsh --profile headless` = [直接使用核心 Agent／Session 的入口](2026-08-09-headless-direct-core-entry-point.md)，不含 Host、HTTP 或浏览器层。
-    - 将来的 Electron 应用经由 IPC fetch 载体复用同一套 web client 包。
+    - `apps/desktop`（`@deepseek-ai/dsh-desktop`）是 Electron 应用：其主进程内嵌 desktop profile Host，preload 向共享 Web 客户端包暴露类型化 IPC Fetch 载体，不含 HTTP server 或后端子进程（见[桌面 Host 决策](2026-08-14-electron-embedded-desktop-host.md)）。
 
 ```
-apps/*  (applications: apps/web = vite app, apps/cli = bin dispatch)
+apps/*  (applications: Web frontend, CLI launcher, Electron desktop application)
   │ consume
   ▼
 packages/host/*                      packages/client/*
@@ -62,10 +62,10 @@ TypeScript 以 solution 根引用的**两个聚合 program** 检查（`tsconfig.
 |---|---|---|---|
 | 前置层 | `dsh-host-apiproxy` | TS/zod 定义 (api/)+ fetch 抽象 (fetch/：handler + 客户端基类) | 做简单、每个消费方都要；Node/浏览器皆可 import；协议内容见下文「消息协议」起各节；client 不得经 ctx 绕开 api |
 | 装配层 | `dsh-host-runtime` | 插件组合 + ApiProxy 集成 + web UI 插件挂载（覆盖八个 dsh.client 包的内存 Loader 树）；host 级配置归属地（defaults/persistenceRoot，将来用户 profile） | 装什么插件、给什么默认值只在这里定；壳不得改装配 |
-| 承载层 | `dsh-host-webserver` | Web HTTP 与 upgrade：静态服务 + `/api/*`→handler 转发 + WebSocket upgrade route + close 语义；插件 bundle 端点 + `__DSH_BOOT__` manifest（元数据清单）注入（由 web 插件注册表供给） | Web（浏览器访问）专用；零 workspace 依赖（注册表经结构注入到达）；Electron 不复用它 |
+| 承载层 | `dsh-host-webserver` | Web HTTP 与 upgrade：静态服务 + `/api/*`→handler 转发 + WebSocket upgrade route + close 语义；插件 bundle 端点 + `__DSH_BOOT__` manifest（元数据清单）注入（由 web 插件注册表供给） | 仅供浏览器访问；零 workspace 依赖（注册表经结构注入到达）；Electron 经 preload IPC 使用同一个 Fetch dispatcher，不挂载本包 |
 | client 库 | `dsh-client-ui-slots` / `dsh-client-web-react` / `dsh-client-ui-primitives` | slot 注册表核心 / ctx↔React 胶合 / 纯 React 原子组件 | 组件零 cordis 运行时依赖；由壳播种进 loader 模块表 |
 | client 插件 | `dsh-client-connection` / `dsh-client-runtime` / `dsh-client-ui-theme` / `dsh-client-i18n` / `dsh-client-ui-layout` / `dsh-client-ui-sidebar` / `dsh-client-ui-conversation` / `dsh-client-ui-trajectory` | 浏览器侧 cordis 插件树（wire 消费方、核心服务、主题、i18n、布局、侧栏、对话、轨迹）——见 Web 客户端架构笔记 | 双入口（node 半边=空 apply；实现在 `src/client/`）；消费面唯一经 ApiProxy |
-| 应用 | `@deepseek-ai/dsh`（apps/cli）+ `dsh-web-frontend`（apps/web，vite 应用） | bin 粗分发 + 每个应用一个拼装模块（web.ts / headless.ts）；vite 应用是 `dsh-client-web` 壳表面之上的薄 main | 各应用使用动态 import，因此不会互相加载；dist 定位等 workspace 知识留在 app |
+| 应用 | `@deepseek-ai/dsh`（apps/cli）+ `dsh-web-frontend`（apps/web，Vite 应用）+ `@deepseek-ai/dsh-desktop`（apps/desktop） | bin 粗分发 + 每个应用一个拼装模块（web.ts / headless.ts）；Vite 应用是 `dsh-client-web` 壳表面之上的薄 main；Electron main 内嵌 desktop profile，并持有原生生命周期与 preload 权限 | 各应用使用动态 import，因此不会互相加载；dist 定位等 workspace 知识留在 app |
 
 #### 命名规则
 
@@ -73,11 +73,11 @@ TypeScript 以 solution 根引用的**两个聚合 program** 检查（`tsconfig.
 
 #### 怎么接入一个新应用（操作清单）
 
-1. **选 fetch 伪造方式**：浏览器同源 HTTP / 进程内 `host.handler.fetch` 注入 / 自写传输切面子类（如将来 Electron IPC，见下文「子类表」）。
-2. **在 `apps/` 下写拼装模块**：`startHost()` + 客户端子类 + 该应用私有的信号/打印/退出语义；混合体不建包，拼装写在 app 里。
+1. **选择 Fetch 载体**：浏览器同源 HTTP / Electron preload IPC / 进程内 `host.handler.fetch` 注入 / 其他传输切面子类（见下文「子类表」）。
+2. **在 `apps/` 下写拼装模块**：`runProfile()` 或 `startHost()` + 客户端子类 + 该应用私有的信号／打印／退出语义；混合体不建包，拼装写在 app 里。
 3. **需要 HTTP 承载才 import `dsh-host-webserver`**，否则零端口。
 
-现有两个应用保持这一区分：Web 应用挂载 Host、载体与浏览器组合，而 `dsh --profile headless` 挂载直接使用核心服务的 runner，不包含 Host、HTTP 或端口。ACP 类协议桥不遵循 client 载体清单：它把 core 暴露给外部生态，直接通过 `ctx.plugin(入口插件)` 挂载，不使用 fetch。
+三个应用保持这一区分：Web 挂载 Host、Web 载体与浏览器组合；Electron 内嵌 Host，经 preload IPC 承载 Fetch 且保持零端口；`dsh --profile headless` 挂载直接使用核心服务的 runner，不包含 Host、HTTP 或浏览器层。ACP 类协议桥不遵循 client 载体清单：它把 core 暴露给外部生态，直接通过 `ctx.plugin(入口插件)` 挂载，不使用 Fetch。
 
 ## 消息协议
 

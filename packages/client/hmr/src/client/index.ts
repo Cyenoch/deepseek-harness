@@ -1,9 +1,10 @@
 /**
  * client-hmr, browser half: hot-reload driver for client plugin entries.
  *
- * Listens on the host's system SSE channel (`GET /plugins/events`); on a
- * `rebuilt` frame it reloads the entry's bundle and swaps the cordis
- * fiber in place. Every graph entry is a plugin bundle
+ * Web reads `rebuilt` frames from the host's system SSE channel
+ * (`GET /plugins/events`); Electron polls revision changes through its preload
+ * manifest method. Either carrier reloads the entry's bundle and swaps the
+ * cordis fiber in place. Every graph entry is a plugin bundle
  * — `immediately` rows differ only in stage-one prefetch (a boot
  * optimization), so all rostered plugin packages share these reload semantics;
  * normal packages (react family, cordis, shell, pure libs) are not entries
@@ -51,11 +52,12 @@
  * of hand-rolling `registry.plugin`. Client entries have exactly one fiber
  * per runtime, so `registry.delete` never collaterally disposes siblings.
  *
- * Self-reload: this plugin is itself a graph entry, so a rebuilt frame may
+ * Self-reload: this plugin is itself a graph entry, so a rebuilt notice may
  * name it. The in-flight reload keeps running in the old bundle's closure
- * (its EventSource closes with the old fiber's effects); the new bundle's
- * apply opens a fresh channel. Frames arriving during the gap are lost —
- * acceptable for the dev channel, the next rebuild renotifies.
+ * until its carrier closes with the old fiber's effects; the new bundle's
+ * apply opens a fresh carrier and takes a current Electron graph baseline.
+ * Notices arriving during the gap are lost — acceptable for the dev channel,
+ * because the next rebuild renotifies.
  *
  * Failure policy: no rollback. An import failure leaves the entry
  * fiberless (the next rebuilt frame retries from scratch); an apply failure
@@ -64,7 +66,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Entry, Loader } from '@deepseek-ai/cordis-plugin-loader'
 import type { PluginsEventFrame } from '../events.ts'
-import { EVENTS_ENDPOINT } from '../events.ts'
+import { DEFAULT_POLL_INTERVAL_MS, EVENTS_ENDPOINT } from '../events.ts'
 
 export type { PluginsEventFrame } from '../events.ts'
 export { EVENTS_ENDPOINT } from '../events.ts'
@@ -74,6 +76,49 @@ export const name = 'client-hmr'
 
 /** Required services: the vendored Loader (entry governance) and the client module system (boot provide, service name `modules`). */
 export const inject = ['loader', 'modules']
+
+interface DesktopManifestBridge {
+  manifest(): Promise<unknown>
+}
+
+interface RevisionGraph {
+  readonly rev: string
+  readonly entries: ReadonlyMap<string, string>
+}
+
+/** Read the Electron manifest bridge without depending on the Connection plugin's runtime module. */
+function desktopManifestBridge(): DesktopManifestBridge | undefined {
+  const root: object = globalThis
+  if (!('dshDesktop' in root)) return undefined
+  const value = root.dshDesktop
+  if (typeof value !== 'object' || value === null || !('manifest' in value)) return undefined
+  return typeof value.manifest === 'function' ? value as DesktopManifestBridge : undefined
+}
+
+/** Parse the revision fields used by Electron HMR from the preload manifest wire value. */
+function parseRevisionGraph(wire: unknown): RevisionGraph {
+  if (typeof wire !== 'object' || wire === null) {
+    throw new Error('client-hmr: desktop manifest is missing or not an object')
+  }
+  if (!('rev' in wire) || !('entries' in wire)
+    || typeof wire.rev !== 'string' || !Array.isArray(wire.entries)) {
+    throw new Error('client-hmr: desktop manifest has invalid graph fields')
+  }
+  const entries = new Map<string, string>()
+  const rawEntries: readonly unknown[] = wire.entries
+  for (const value of rawEntries) {
+    if (typeof value !== 'object' || value === null) {
+      throw new Error('client-hmr: desktop manifest entry is not an object')
+    }
+    if (!('id' in value) || !('rev' in value)
+      || typeof value.id !== 'string' || typeof value.rev !== 'string') {
+      throw new Error('client-hmr: desktop manifest entry has invalid revision fields')
+    }
+    if (entries.has(value.id)) throw new Error(`client-hmr: duplicate desktop manifest entry "${value.id}"`)
+    entries.set(value.id, value.rev)
+  }
+  return { rev: wire.rev, entries }
+}
 
 /** Find the loader entry whose module specifier is `id` (entry tree ids are random; the package name lives in `options.name`). */
 function findEntry(loader: Loader, id: string): Entry | undefined {
@@ -161,6 +206,52 @@ export function apply(ctx: Context): void {
         // are ignored by design.
         break
     }
+  }
+
+  const desktop = desktopManifestBridge()
+  if (desktop !== undefined) {
+    ctx.effect(() => {
+      const stopped = Promise.withResolvers<void>()
+      let polling = false
+      let previous: RevisionGraph | undefined
+      let lastError: string | undefined
+      const poll = async (): Promise<void> => {
+        if (polling) return
+        polling = true
+        try {
+          const outcome = await Promise.race([
+            desktop.manifest().then(value => ({ type: 'manifest' as const, value })),
+            stopped.promise.then(() => ({ type: 'stopped' as const })),
+          ])
+          if (outcome.type === 'stopped') return
+          const next = parseRevisionGraph(outcome.value)
+          lastError = undefined
+          const baseline = previous
+          if (baseline === undefined) {
+            previous = next
+            return
+          }
+          if (next.rev === baseline.rev) return
+          const changed = [...next.entries]
+            .filter(([id, rev]) => baseline.entries.has(id) && baseline.entries.get(id) !== rev)
+          previous = next
+          for (const [id, rev] of changed) handle({ type: 'rebuilt', id, rev })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          if (message !== lastError) ctx.logger.warn(`client-hmr: desktop manifest poll failed: ${message}`)
+          lastError = message
+        } finally {
+          polling = false
+        }
+      }
+      const timer = setInterval(() => { void poll() }, DEFAULT_POLL_INTERVAL_MS)
+      void poll()
+      return () => {
+        stopped.resolve()
+        clearInterval(timer)
+      }
+    }, 'client-hmr: desktop manifest poll')
+    return
   }
 
   ctx.effect(() => {

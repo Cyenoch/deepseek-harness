@@ -2,7 +2,7 @@
 
 English | [中文](client-modules.zh.md)
 
-The web plugin table: the Node half of the client module system in [dsh-client-modules](../../packages/client/modules), provided as `ctx.clientModules` (`ClientModuleRegistry`). It scans the host Loader's entries for packages declaring `dsh.client`, composes the `window.__DSH_BOOT__` entry graph, serves each bundle at `/plugins/<id>/client.js`, and taps the index render to inject the boot manifest — the four faces of one service. It is an optional capability of the web GUI stack, not part of the agent-loop spine, and it is a consumer of [dsh-host-webserver](../../packages/host/webserver): the carrier described in [web-server.md](web-server.md) supplies the prefix route and index tap this service registers. The same package's browser half (`ctx.modules`, the lazy-CJS module table that fetches and materializes these bundles) is kernel machinery documented in the [package README](../../packages/client/modules/README.md), not here.
+The Host client plugin table in [dsh-client-modules](../../packages/client/modules), provided as `ctx.clientModules` (`ClientModuleRegistry`). It scans Host Loader entries for packages declaring `dsh.client` and always composes the `window.__DSH_BOOT__` entry graph. With `ctx.webServer`, it serves `/plugins/<id>/client.js` and injects the manifest through an index tap. The desktop profile disables that HTTP carrier; Electron reads `graph()` and `clientPath(id)`, serves bundles through `dsh://bundle`, and seeds the manifest through preload. This optional GUI capability is not part of the agent-loop spine. The same package's browser half (`ctx.modules`, the lazy CJS module table that fetches and materializes those bundles) is kernel machinery documented in the [package README](../../packages/client/modules/README.md).
 
 Source: [`packages/client/modules/src/client/manifest.ts`](../../packages/client/modules/src/client/manifest.ts)
 
@@ -52,9 +52,9 @@ Scanning is incremental per package; there is no full-rescan code path. Every co
 
 Package metadata — including the negative "not a client package" verdict — is cached per name and never expires: plugin-set changes take effect on restart. A fiber restart reuses its row and rev untouched; bundle content changes reach the graph only through `rebuilt()`.
 
-## The bundle route and index tap
+## Carrier publication
 
-`GET`/`HEAD /plugins/<id>/client.js` serves the registered bundle from disk with `no-cache` (the rev query, not HTTP caching, anchors consistency); other methods are 405. An unknown id — or a registered row whose bundle is unreadable because it has not been built yet — answers a loud 404 rather than letting the carrier's SPA fallback ship HTML as JavaScript. The index tap injects the current graph on every index render, so a reload always boots against the live composition.
+The Web carrier serves `GET`/`HEAD /plugins/<id>/client.js` from disk with `no-cache` and injects the current graph into every index render; other methods are 405, and unknown or unreadable bundle ids return 404 rather than falling through to SPA HTML. The Electron carrier leaves `webServer` absent, obtains the same graph and authorized absolute bundle paths directly from the registry, and publishes them through its main-process `dsh://bundle` handler. Graph composition therefore survives when either publication mechanism is disabled.
 
 ## The service
 
@@ -74,7 +74,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.clientModules` — `ClientModuleRegistry`
 
-The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index tap. Construction runs the activation scan synchronously — a malformed declaration or missing bundle among the already-loaded entries aggregates into one loud throw (FAILED fiber; the boot activation audit reports it).
+The client plugin table: incremental `dsh.client` scan, carrier-independent graph composition, optional Web publication, and the HMR node half's registration and notification service. Construction runs the activation scan synchronously, so malformed declarations and missing bundles among already-loaded entries fail the owning fiber before a carrier reads the graph.
 
 ```ts cordis-catalog
 /**
@@ -114,5 +114,13 @@ onRebuilt(listener: (id: string, rev: string) => void): () => void
 onGraphChanged(listener: () => void): () => void
 ```
 
-Source: [`packages/client/modules/src/index.ts:184`](../../packages/client/modules/src/index.ts)
+Source: [`packages/client/modules/src/index.ts:185`](../../packages/client/modules/src/index.ts)
+
+<a id="ctxdesktopruntime--desktopruntime"></a>
+
+### `ctx.desktopRuntime` — `DesktopRuntime`
+
+Runtime values that release Electron-only rows after this bundle mounts.
+
+Source: [`packages/bundle/desktop-app/src/index.ts:14`](../../packages/bundle/desktop-app/src/index.ts)
 <!-- END GENERATED cordis-surface -->

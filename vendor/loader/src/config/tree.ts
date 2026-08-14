@@ -1,3 +1,6 @@
+import { createRequire } from 'node:module'
+import { isAbsolute } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { composeError, Context } from '@deepseek-ai/cordis'
 import { isNonNullable, type Dict } from '@deepseek-ai/cosmokit'
 import { Entry, type EntryOptions } from './entry.ts'
@@ -153,11 +156,13 @@ export abstract class EntryTree {
       info.offset += 3
       if (this.ctx.loader.internal) {
         return await this.ctx.loader.internal.import(name, this.ctx.baseUrl!, {})
-      } else if (name.startsWith('.')) {
-        return await import(/* @vite-ignore */new URL(name, this.ctx.baseUrl).href)
-      } else {
-        return await import(/* @vite-ignore */name)
       }
+      if (name.startsWith('.')) {
+        return await import(/* @vite-ignore */new URL(name, this.ctx.baseUrl).href)
+      }
+      const require = createRequire(new URL('__cordis_loader__.cjs', this.ctx.baseUrl))
+      const resolved = require.resolve(name)
+      return await import(/* @vite-ignore */isAbsolute(resolved) ? pathToFileURL(resolved).href : resolved)
     }, getOuterStack)
   }
 

@@ -1,7 +1,10 @@
 /** Release family discovery, publish order, tag naming, and the bump judgements. */
 
-import { describe, expect, it } from 'vitest'
-import { releaseFamily, type ReleaseMember } from './families.ts'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { DSH_BUILD_ONLY_MANIFESTS, releaseFamily, type ReleaseMember } from './families.ts'
 import { compareVersions, nextVendorVersion, reachesPayload } from './bump.ts'
 
 /**
@@ -15,7 +18,62 @@ function member(directory: string, name: string, manifest: Record<string, unknow
   return { directory, name, version: '0.0.1', manifest }
 }
 
+const fixtureRoots: string[] = []
+
+afterEach(() => {
+  for (const root of fixtureRoots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+function fixtureRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-release-family-'))
+  fixtureRoots.push(root)
+  return root
+}
+
+function writeManifest(root: string, relative: string, manifest: Record<string, unknown>): void {
+  const path = join(root, relative)
+  mkdirSync(join(path, '..'), { recursive: true })
+  writeFileSync(path, `${JSON.stringify(manifest)}\n`)
+}
+
 describe('release families', () => {
+  it('excludes only the named desktop host from the npm release family', () => {
+    expect(DSH_BUILD_ONLY_MANIFESTS).toEqual({ 'apps/desktop/package.json': true })
+    const members = releaseFamily('dsh').members(resolve(import.meta.dirname, '../..'))
+    const names = members.map(entry => entry.name)
+
+    expect(names).toContain('@deepseek-ai/dsh')
+    expect(names).toContain('@deepseek-ai/dsh-web-frontend')
+    expect(names).not.toContain('@deepseek-ai/dsh-desktop')
+    expect(members.some(entry => entry.manifest.private === true)).toBe(false)
+  })
+
+  it('keeps an accidentally private app as a release member', () => {
+    const root = fixtureRoot()
+    writeManifest(root, 'packages/core/probe/package.json', {
+      name: '@deepseek-ai/dsh-probe',
+      version: '1.2.3',
+    })
+    writeManifest(root, 'apps/desktop/package.json', {
+      name: '@deepseek-ai/dsh-desktop',
+      version: '0.0.0',
+      private: true,
+    })
+    writeManifest(root, 'apps/other/package.json', {
+      name: '@deepseek-ai/dsh-other',
+      version: '1.2.3',
+      private: true,
+    })
+
+    const members = releaseFamily('dsh').members(root)
+    expect(members.map(entry => entry.name)).toEqual([
+      '@deepseek-ai/dsh-other',
+      '@deepseek-ai/dsh-probe',
+    ])
+    expect(members.find(entry => entry.name === '@deepseek-ai/dsh-other')?.manifest.private).toBe(true)
+    expect(members.some(entry => entry.name === '@deepseek-ai/dsh-desktop')).toBe(false)
+  })
+
   it('names one tag for the whole dsh family and one per vendored package', () => {
     const dsh = releaseFamily('dsh')
     const vendor = releaseFamily('vendor')

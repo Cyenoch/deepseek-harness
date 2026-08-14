@@ -1,0 +1,30 @@
+- button "New session"
+- button "Collapse sidebar":
+  - img
+- button "New session":
+  - img
+  - text: New Session
+- text: Workspaces
+- button "Search sessions":
+  - img
+- textbox "Search sessions..."
+- button "View options":
+  - img
+- tree "Sessions": No sessions yet
+- button "Settings":
+  - img
+  - text: Settings
+- text: Into the Unknown Preview
+- button "Choose workspace":
+  - img
+  - text: Choose workspace
+  - img
+- button "Standard mode":
+  - img
+  - text: Standard mode
+  - img
+- textbox "Choose workspace":
+  - /placeholder: Choose a workspace to start
+- button "Commands" [disabled]:
+  - img
+- button "Send message" [disabled]

@@ -380,8 +380,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'clientModules',
-    summary: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index tap.',
-    description: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index tap. Construction runs the activation scan synchronously — a malformed declaration or missing bundle among the already-loaded entries aggregates into one loud throw (FAILED fiber; the boot activation audit reports it).',
+    summary: 'The client plugin table: incremental `dsh.client` scan, carrier-independent graph composition, optional Web publication, and the HMR node half\'s registration and notification service.',
+    description: 'The client plugin table: incremental `dsh.client` scan, carrier-independent graph composition, optional Web publication, and the HMR node half\'s registration and notification service. Construction runs the activation scan synchronously, so malformed declarations and missing bundles among already-loaded entries fail the owning fiber before a carrier reads the graph.',
     methods: [
       {
         signature: 'graph(): WebBootGraph',
@@ -522,6 +522,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract unset(ref: CredentialRef): Promise<void>',
         description: 'Remove one reference from the provider-managed writable source; removing an absent reference is a no-op. Rejects while a read-only source shadows the reference, like set.',
         parameters: [{ name: 'ref', description: 'the reference to remove.' }],
+      },
+    ],
+  },
+  {
+    key: 'desktopRuntime',
+    summary: 'Runtime values that release Electron-only rows after this bundle mounts.',
+    description: 'Runtime values that release Electron-only rows after this bundle mounts.',
+    methods: [
+      {
+        signature: 'readonly transport: \'electron\'',
+        description: 'Physical transport owned by the Electron main process.',
+        parameters: [],
       },
     ],
   },
@@ -2823,7 +2835,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConfinedArgv',
-    declaration: 'export interface ConfinedArgv {\n    argv: string[];\n    enforcement: SandboxEnforcement;\n    denialSignatures: readonly string[];\n    runnerFailureRules: readonly RunnerFailureRule[];\n}',
+    declaration: 'export interface ConfinedArgv {\n    argv: string[];\n    environment?: Readonly<Record<string, string>>;\n    enforcement: SandboxEnforcement;\n    denialSignatures: readonly string[];\n    runnerFailureRules: readonly RunnerFailureRule[];\n}',
   },
   {
     name: 'ConfinedSandboxMode',

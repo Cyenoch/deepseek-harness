@@ -16,13 +16,15 @@ There is no privileged core to patch: you extend dsh by mounting a plugin beside
 
 A running `dsh` is a plugin tree composed at boot from ordered layers.
 
-A **profile** is a named composition stored in the Harness home. It lists the bundles it stacks, holds any out-of-tree plugins it installs, and keeps the user's own `cordis.patch.yml`. `web` and `headless` ship as templates.
+A **profile** is a named composition stored in the Harness home. It lists the bundles it stacks, holds any out-of-tree plugins it installs, and keeps the user's own `cordis.patch.yml`. `web`, `headless`, and `desktop` ship as templates.
 
 A **bundle** is a distribution format for Cordis config rows and the code they mount, so whatever it inserts stays patchable by the layers above it.
 
 Each declares itself in its own `package.json` under a `dsh` field: `dsh.profile` lists a profile's bundles, and `dsh.bundle` points at a bundle's patch file.
 
-[`dsh-base`](../packages/bundle/base/README.md) is the first layer of every profile: model adapters, tools, persistence, sandbox and approval policy, settings, credentials, telemetry. [`dsh-web-app`](../packages/bundle/web-app/README.md) adds the browser application; [`dsh-headless`](../packages/bundle/headless/README.md) adds a one-shot runner with no server at all.
+[`dsh-base`](../packages/bundle/base/README.md) is the first layer of every profile: model adapters, tools, persistence, sandbox and approval policy, settings, credentials, telemetry. [`dsh-web-app`](../packages/bundle/web-app/README.md) adds the browser application; [`dsh-headless`](../packages/bundle/headless/README.md) adds a one-shot runner with no server at all; [`dsh-desktop-app`](../packages/bundle/desktop-app/README.md) keeps the shared Host and client plugin roster while replacing the Web carrier and browser-only rows with Electron integration.
+
+[`apps/desktop`](../apps/desktop/README.md) is the Electron application for that profile. Its main process embeds `runProfile`, exposes the Host Fetch dispatcher through typed preload IPC, and serves the Web frontend and client bundles through the private `dsh:` protocol; it opens no loopback server and launches no backend child. Electron owns the native window, single-instance behavior, navigation policy, directory selection, session export, and bounded shutdown ([decision](../.agents/notes/implemented/architecture/2026-08-14-electron-embedded-desktop-host.md), [cookbook](cookbook/wrapping-dsh-with-electron.md)).
 
 Layers apply to an empty entry list in this order: each bundle in the profile's listed order, then the profile's `cordis.patch.yml`, then the home-level one, then any `--patch` overlay. A patch targets a row by id and replaces its whole config, or inserts new rows.
 

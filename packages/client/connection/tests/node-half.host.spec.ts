@@ -90,6 +90,41 @@ async function mounted(config?: { trustedHosts?: string[] }): Promise<{
 }
 
 describe('connection node half', () => {
+  it('mounts the Electron carrier without a Web server and dispatches registered channels through Fetch', async () => {
+    const ctx = new Context()
+    const fiber = ctx.plugin({ inject: [...inject], apply }, { transport: 'electron' })
+    await fiber.await()
+    const connection = ctx.connection
+    const remove = connection.rpc.handle('/rpc', async endpoint => ({ ok: true, value: endpoint }), {
+      authority: 'loopback',
+    })
+    const response = await connection.fetch(new Request('http://dsh.internal/rpc/goals/create', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: 'client-request',
+        rpcId: 'rpc-electron',
+        method: 'goals/create',
+        payload: {},
+      }),
+    }))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      type: 'server-response',
+      rpcId: 'rpc-electron',
+      result: { ok: true, value: 'goals/create' },
+    })
+    expect((await connection.fetch(new Request('http://dsh.internal/outside'))).status).toBe(404)
+    await remove()
+    await fiber.dispose()
+  })
+
+  it('still requires a Web server for the default Web carrier', async () => {
+    const fiber = new Context().plugin({ inject: [...inject], apply })
+    await expect(fiber).rejects.toThrow('Web transport requires ctx.webServer')
+  })
+
   it('fails loud when the carrier cap cannot hold the configured image batch', () => {
     const ctx = new Context()
     const routes: WebRoute[] = []
@@ -252,7 +287,7 @@ describe('connection node half', () => {
 
     expect(() => connection.rpc.handle('/rpc', async () => ({ ok: true, value: null }), {
       authority: 'trusted-host',
-    })).toThrow(/duplicate route/)
+    })).toThrow('connection: RPC channel "/rpc" already registered')
     await remove()
     expect(routes.map(candidate => candidate.path)).toEqual([API_PATH])
     await fiber.dispose()

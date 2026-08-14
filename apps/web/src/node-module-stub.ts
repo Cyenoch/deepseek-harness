@@ -1,6 +1,6 @@
 /**
- * Browser stand-in for `node:module`. `createRequire` is unreachable in the
- * configured loader path and fails loud if that assumption changes.
+ * Browser stand-ins for Node builtins the vendored Loader imports. The
+ * configured client path injects `loader.internal` and never reaches these.
  */
 
 /** Throwing stand-in for node:module's createRequire (never reached in the browser boot). */
@@ -10,3 +10,9 @@ export const createRequire = (): never => {
 
 /** Erased type peer for the vendored loader's type-only LoadHookContext import. */
 export type LoadHookContext = never
+
+/** Stand-in for `node:path.isAbsolute` (never reached in the browser boot). */
+export const isAbsolute = (path: string): boolean => path.startsWith('/') || /^[A-Za-z]:[\\/]/u.test(path)
+
+/** Stand-in for `node:url.pathToFileURL` (never reached in the browser boot). */
+export const pathToFileURL = (path: string): URL => new URL(path, 'file:///')

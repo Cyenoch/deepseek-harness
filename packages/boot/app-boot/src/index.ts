@@ -766,7 +766,7 @@ export async function boot(
   // so its failure is host setup, not the plugin tree.
   let stage = 'host preparation failed'
   try {
-    ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
+    ctx.baseUrl = bareModuleBaseUrl ?? pathToFileURL(dirname(absoluteConfigPath)).href + '/'
     ctx.provide('dshHomePath', dshHomePath)
     await ctx.plugin(Loader)
     await prepare?.(ctx)

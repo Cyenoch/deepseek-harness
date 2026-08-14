@@ -10,6 +10,22 @@
   transition: grid-template-columns var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
+.windowDragRegion {
+  display: none;
+}
+
+/* Electron maps this transparent strip to native window movement. It ends
+   before the sidebar controls begin, so their pointer handling stays intact. */
+:global(html[data-dsh-window-chrome='macos-hidden-inset']) .windowDragRegion {
+  display: block;
+  position: absolute;
+  inset: 0 0 auto;
+  height: 32px;
+  z-index: 3;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
 /* Dragging writes widths at pointer cadence; easing them would detach the
    column from the handle. */
 .frame[data-dragging] {

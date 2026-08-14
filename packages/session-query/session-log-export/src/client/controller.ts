@@ -1,4 +1,4 @@
-/** Browser download state shared by the Session Header button and `/export`. */
+/** Carrier-neutral download state shared by the Session Header button and `/export`. */
 
 import { createSnapshotStore, type SessionId, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 
@@ -18,7 +18,7 @@ export interface SessionLogDownloadState {
 }
 
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
-type Save = (url: string, filename: string) => void
+type Save = (url: string, filename: string) => void | Promise<void>
 
 const INITIAL: SessionLogDownloadState = { bySession: {} }
 
@@ -32,18 +32,23 @@ export function sessionLogZipFilename(sessionId: SessionId): string {
 }
 
 /**
- * Hand a Host download URL to the browser download manager.
+ * Hand a Host download URL to the selected carrier's save operation.
  * @param url - same-origin Host download URL.
- * @param filename - browser download filename.
+ * @param filename - carrier download filename.
+ * @returns the selected carrier's save completion.
  */
-export function downloadUrl(url: string, filename: string): void {
+export function downloadUrl(url: string, filename: string): void | Promise<void> {
+  // A dsh:// document cannot rely on browser download semantics; preload owns
+  // the native save dialog while the Web carrier keeps the ordinary anchor.
+  const desktop = (globalThis as { dshDesktop?: { saveSessionExport(url: string, filename: string): Promise<void> } }).dshDesktop
+  if (desktop !== undefined) return desktop.saveSessionExport(url, filename)
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = filename
   anchor.click()
 }
 
-/** Resolve the browser's Host base with the connection carrier's null-origin fallback. */
+/** Resolve the Host base with the Connection carrier's null-origin fallback. */
 function hostBase(): string {
   const origin = (globalThis as { location?: { origin?: string } }).location?.origin
   return origin !== undefined && origin !== 'null' ? origin : 'http://dsh.internal'
@@ -53,7 +58,7 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** Owns one in-flight browser download per Session and publishes modal state. */
+/** Owns one in-flight carrier download per Session and publishes modal state. */
 export class SessionLogDownloadController {
   /** uSES-safe state source shared by every Session-scoped modal contribution. */
   readonly store: SnapshotStore<SessionLogDownloadState> = createSnapshotStore(INITIAL)
@@ -62,8 +67,8 @@ export class SessionLogDownloadController {
   private disposed = false
 
   /**
-   * @param fetcher - HTTP carrier used to read the host-streamed ZIP.
-   * @param save - browser save operation.
+   * @param fetcher - Fetch carrier used to read the Host-streamed ZIP.
+   * @param save - carrier save operation.
    */
   constructor(
     private readonly fetcher: Fetch = (input, init) => fetch(input, init),
@@ -73,7 +78,7 @@ export class SessionLogDownloadController {
   /**
    * Download one Session tree; concurrent gestures for the same Session share one operation.
    * @param sessionId - root Session whose ZIP includes descendants and attachments.
-   * @returns after the browser save starts, an error state is published, or a late post-disposal request is ignored.
+   * @returns after the selected carrier's save operation settles, an error state is published, or a late post-disposal request is ignored.
    */
   download(sessionId: SessionId): Promise<void> {
     const existing = this.active.get(sessionId)
@@ -88,7 +93,7 @@ export class SessionLogDownloadController {
   }
 
   /**
-   * Close one Session's dialog without cancelling an in-flight browser download.
+   * Close one Session's dialog without cancelling an in-flight carrier download.
    * @param sessionId - Session whose modal closes.
    */
   dismiss(sessionId: SessionId): void {
@@ -119,7 +124,7 @@ export class SessionLogDownloadController {
         const detail = await response.text().catch(() => '')
         throw new Error(`Export failed: HTTP ${response.status}${detail === '' ? '' : ` ${detail}`}`)
       }
-      this.save(url.toString(), sessionLogZipFilename(sessionId))
+      await this.save(url.toString(), sessionLogZipFilename(sessionId))
       const open = this.store.getSnapshot().bySession[String(sessionId)]?.open ?? true
       this.publish(sessionId, { open, status: 'success', error: null })
     } catch (error: unknown) {

@@ -159,6 +159,16 @@ describe('loadProfile', () => {
     }
     expect(readProfileManifest('t', resolveProfileDir('web', home)).dsh?.profile?.bundles)
       .toEqual([...PROFILE_TEMPLATES.web ?? []])
+    expect(PROFILE_TEMPLATES.desktop).toEqual([
+      '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-desktop-app',
+    ])
+    try {
+      loadProfile('t', 'desktop', anchor, home)
+    } catch {
+      // Resolution failure is the plain-Node outcome for this empty anchor.
+    }
+    expect(readProfileManifest('t', resolveProfileDir('desktop', home)).dsh?.profile?.bundles)
+      .toEqual([...PROFILE_TEMPLATES.desktop ?? []])
   })
 
   it('normalizes only the exact installation-owned headless bundle tuple', () => {

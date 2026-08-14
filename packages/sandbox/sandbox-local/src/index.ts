@@ -97,7 +97,11 @@ function defaultProbeSeatbelt(seatbeltExec: string, timeoutMs: number): boolean 
  * sole candidate, so the product never probes; the probe exists for override
  * chains and mirrors the other rungs' shape.
  */
-function defaultProbeWindowsAcl(runnerInvocation: string[], timeoutMs: number): boolean {
+function defaultProbeWindowsAcl(
+  runnerInvocation: string[],
+  timeoutMs: number,
+  environment: Readonly<Record<string, string>> | undefined,
+): boolean {
   const program = runnerInvocation[0]
   if (program === undefined) return false
   const probe = spawnSync(program, [
@@ -107,6 +111,7 @@ function defaultProbeWindowsAcl(runnerInvocation: string[], timeoutMs: number): 
   ], {
     timeout: timeoutMs,
     stdio: 'ignore',
+    ...environment === undefined ? {} : { env: { ...process.env, ...environment } },
   })
   return probe.status === 0
 }
@@ -131,6 +136,8 @@ export interface SandboxInternals {
   windowsAclRunnerArgs?: string[]
   /** Replaces the resolved windows-acl runner built entry path (a fake lib/runner.js location). */
   windowsAclRunnerEntry?: string
+  /** Replaces Electron runtime detection for the Windows runner environment. */
+  electronRuntime?: boolean
   /** Replaces the functional windows-acl probe (the win32 chain's sole rung — only consulted if that chain ever grows). */
   probeWindowsAcl?: () => boolean
   /** Replaces the private-temp-directory removal at provider dispose (a throwing fake exercises the cleanup-failure path). */
@@ -324,11 +331,13 @@ export class LocalSandboxProvider extends SandboxProvider {
     }
     const selected = this.selectRunner(policy.mode)
     const runnerArgv = this.runnerArgv(selected.runner, policy)
+    const environment = selected.runner === 'windows-acl' ? this.windowsAclRunnerEnvironment() : undefined
     return {
       argv: [...runnerArgv, '--', ...argv],
       enforcement: selected.enforcement,
       denialSignatures: DENIAL_SIGNATURES[selected.runner],
       runnerFailureRules: RUNNER_FAILURE_RULES[selected.runner],
+      ...environment === undefined ? {} : { environment },
     }
   }
 
@@ -531,7 +540,11 @@ export class LocalSandboxProvider extends SandboxProvider {
       }
       case 'windows-acl': {
         const probe = this.internals.probeWindowsAcl
-          ?? (() => defaultProbeWindowsAcl(this.windowsAclRunnerInvocation(), this.probeTimeoutMs))
+          ?? (() => defaultProbeWindowsAcl(
+            this.windowsAclRunnerInvocation(),
+            this.probeTimeoutMs,
+            this.windowsAclRunnerEnvironment(),
+          ))
         return probe() ? 'partial' : 'unusable'
       }
       default: return assertNever(runner)
@@ -549,10 +562,8 @@ export class LocalSandboxProvider extends SandboxProvider {
   }
 
   /**
-   * The windows-acl runner argv prefix: the built lib/runner.js entry when
-   * present (production), else the package source through tsx (development).
-   * The prefix stays `[node, runner, ...]` — a future native-exe runner keeps
-   * the same argv contract and only swaps these entries.
+   * The windows-acl runner argv prefix: the built runner through the current
+   * Node-compatible executable, or its TypeScript source during development.
    */
   private windowsAclRunnerInvocation(): string[] {
     const override = this.internals.windowsAclRunnerArgs
@@ -561,6 +572,12 @@ export class LocalSandboxProvider extends SandboxProvider {
     if (existsSync(builtEntry)) return [process.execPath, builtEntry]
     const sourceEntry = fileURLToPath(import.meta.resolve('@deepseek-ai/dsh-sandbox-windows-acl/src/runner.ts'))
     return [process.execPath, '--import', 'tsx/esm', sourceEntry]
+  }
+
+  /** Make Electron's executable run the JavaScript ACL entry as Node for this child only. */
+  private windowsAclRunnerEnvironment(): Readonly<Record<string, string>> | undefined {
+    const electronRuntime = this.internals.electronRuntime ?? process.versions.electron !== undefined
+    return electronRuntime ? { ELECTRON_RUN_AS_NODE: '1' } : undefined
   }
 }
 

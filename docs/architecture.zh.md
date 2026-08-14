@@ -16,13 +16,15 @@
 
 运行中的 `dsh` 是一棵插件树，由启动时按序叠加的各层组合而成。
 
-**profile** 是存放在 Harness home 中的具名组装。它列出自己叠放的组合包，存放自己安装的树外插件，并保存用户自己的 `cordis.patch.yml`。`web` 和 `headless` 作为模板随发行版交付。
+**profile** 是存放在 Harness home 中的具名组装。它列出自己叠放的组合包，存放自己安装的树外插件，并保存用户自己的 `cordis.patch.yml`。`web`、`headless` 和 `desktop` 作为模板随发行版交付。
 
 **组合包**是 Cordis 配置项及其挂载代码的分发格式，因此它插入的内容始终可被其上各层 patch。
 
 两者都在各自的 `package.json` 中通过 `dsh` 字段声明自己：`dsh.profile` 列出一个 profile 的组合包，`dsh.bundle` 指向一个组合包的 patch 文件。
 
-[`dsh-base`](../packages/bundle/base/README.md) 是每个 profile 的第一层：模型适配器、工具、持久化、沙箱与审批策略、设置、凭据、遥测。[`dsh-web-app`](../packages/bundle/web-app/README.md) 增加浏览器应用；[`dsh-headless`](../packages/bundle/headless/README.md) 增加一次性运行器，且完全不带服务器。
+[`dsh-base`](../packages/bundle/base/README.md) 是每个 profile 的第一层：模型适配器、工具、持久化、沙箱与审批策略、设置、凭据、遥测。[`dsh-web-app`](../packages/bundle/web-app/README.md) 增加浏览器应用；[`dsh-headless`](../packages/bundle/headless/README.md) 增加一次性运行器，且完全不带服务器；[`dsh-desktop-app`](../packages/bundle/desktop-app/README.md) 保留共享 Host 与客户端插件名单，同时以 Electron 集成替换 Web 载体和浏览器专用条目。
+
+[`apps/desktop`](../apps/desktop/README.md) 是该 profile 的 Electron 应用。其主进程内嵌 `runProfile`，通过类型化 preload IPC 暴露 Host Fetch dispatcher，并经私有 `dsh:` 协议提供 Web frontend 与客户端 bundle；它不开放 loopback 服务器，也不启动后端子进程。Electron 持有原生窗口、单实例行为、导航策略、目录选择、会话导出与有界关停（见[决策](../.agents/notes/implemented/architecture/2026-08-14-electron-embedded-desktop-host.md)与 [Cookbook](cookbook/wrapping-dsh-with-electron.md)）。
 
 各层按此顺序应用在空条目列表之上：先按 profile 列出的顺序应用每个组合包，然后是 profile 的 `cordis.patch.yml`，然后是 home 级的那份，最后是任意 `--patch` overlay。一条 patch 按 id 定位某个条目并替换其整个 config，或插入新条目。
 

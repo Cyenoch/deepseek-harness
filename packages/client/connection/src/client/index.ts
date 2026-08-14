@@ -1,11 +1,11 @@
 /**
- * Browser wire client. The plugin selects fixture or HTTP transport, provides
- * the shared API client, and lets the runtime object layer start the stream
- * controller with its sinks.
+ * Browser wire client. The plugin selects fixture, Web, or Electron transport,
+ * provides the shared API client, and lets the runtime object layer start the stream controller.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { HostDescription, IApiClient } from './api.ts'
 import { ConnectionController, type ConnectionConfig, type ConnectionSinks, type ConnectionState } from './connection.ts'
+import { ElectronApiClient, electronBridge, electronFetch, rewriteDesktopFetchUrl } from './electron-api-client.ts'
 import { FixtureApiClient } from './fixture.ts'
 import { WebApiClient } from './web-api-client.ts'
 import { createWebConnectionRpc } from './rpc.ts'
@@ -35,6 +35,14 @@ export {
   AbstractApiClient,
   transportError,
 } from './api.ts'
+export type {
+  ElectronDesktopStatus,
+  ElectronFetchHead,
+  ElectronFetchPortMessage,
+  ElectronFetchRead,
+  ElectronFetchRequest,
+  ElectronRendererBridge,
+} from './electron-contract.ts'
 
 // Connection loop types are public through ConnectionHandle.start; the
 // controller remains package-internal.
@@ -58,9 +66,9 @@ export const inject: string[] = []
  * is ready — connection stays consumer-agnostic).
  */
 export interface ConnectionHandle {
-  /** Shared api client (fixture or real, decided at boot from the page URL). */
+  /** Shared api client (fixture, Web, or Electron, decided at boot from the page environment). */
   readonly api: IApiClient
-  /** Whether the current page authority is loopback; non-browser contexts default to true. */
+  /** Whether the current carrier is trusted as local to the Host. */
   readonly isLoopback: boolean
   /** Generation-scoped Host facts, including native path-open capability. */
   readonly hostDescription: HostDescriptionSource
@@ -78,14 +86,37 @@ export interface ConnectionHandle {
 }
 
 /**
- * Client plugin body: pick the api by page mode and provide ctx.connection.
- * @param ctx - client cordis context.
+ * Client plugin body: select the carrier and provide ctx.connection.
+ * @param ctx - client Cordis context.
  */
 export function apply(ctx: Context): void {
   const pageLocation = typeof location === 'undefined' ? undefined : location
   const fixture = pageLocation !== undefined && new URLSearchParams(pageLocation.search).has('fixture')
   const fixtureClient = fixture ? new FixtureApiClient() : undefined
-  const api: IApiClient = fixtureClient ?? new WebApiClient()
+  const desktop = fixtureClient === undefined ? electronBridge() : undefined
+  const api: IApiClient = fixtureClient
+    ?? (desktop === undefined ? new WebApiClient() : new ElectronApiClient(desktop))
+
+  if (desktop !== undefined) {
+    // Client plugins may call fetch('/api/...') directly. Under dsh://app that
+    // URL would hit the static-asset protocol, so only Host-bound requests are
+    // rewritten onto the validated IPC origin; external fetch remains native.
+    const browserFetch = globalThis.fetch.bind(globalThis)
+    globalThis.fetch = (input, init) => {
+      const internal = rewriteDesktopFetchUrl(input, pageLocation?.origin)
+      if (internal === undefined) return browserFetch(input, init)
+      return electronFetch(
+        desktop,
+        input instanceof Request ? new Request(internal, input) : internal,
+        input instanceof Request ? undefined : init,
+      )
+    }
+    ctx.effect(
+      () => () => { globalThis.fetch = browserFetch },
+      'client-connection: Electron fetch bridge',
+    )
+  }
+
   const rpc = fixtureClient?.rpc ?? createWebConnectionRpc()
   let started = false
   let description: HostDescription | undefined
@@ -103,7 +134,7 @@ export function apply(ctx: Context): void {
   }
   const handle: ConnectionHandle = {
     api,
-    isLoopback: pageLocation === undefined || isLoopbackHostname(pageLocation.hostname),
+    isLoopback: desktop !== undefined || pageLocation === undefined || isLoopbackHostname(pageLocation.hostname),
     hostDescription: {
       getSnapshot: () => description,
       subscribe: (listener) => {
@@ -119,10 +150,6 @@ export function apply(ctx: Context): void {
         ...sinks,
         onConnected: (next) => {
           publishDescription(next)
-          // A description subscriber may synchronously stop the loop. In that
-          // case publishDescription(undefined) has already retracted this
-          // generation, so do not leak its stale connected notification to
-          // the consumer sink afterward.
           if (!Object.is(description, next)) return
           sinks.onConnected?.(next)
         },

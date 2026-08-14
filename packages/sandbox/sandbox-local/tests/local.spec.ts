@@ -450,4 +450,26 @@ describe('the windows-acl probe (runner invocation contract)', () => {
     const confined = sandbox.confine(['true'], RO)
     expect(confined.argv.slice(0, 2)).toEqual([process.execPath, builtEntry])
   })
+
+  it('uses Electron as Node only for the ACL runner child', async () => {
+    const { sandbox } = await setup({}, {
+      chain: ['windows-acl'],
+      electronRuntime: true,
+      windowsAclRunnerArgs: [process.execPath, 'windows-acl-runner.js'],
+    })
+    const confined = sandbox.confine(['true'], RO)
+    expect(confined.argv.slice(0, 2)).toEqual([process.execPath, 'windows-acl-runner.js'])
+    expect(confined.environment).toEqual({ ELECTRON_RUN_AS_NODE: '1' })
+  })
+
+  it('adds no runner environment under ordinary Node', async () => {
+    const { sandbox } = await setup({}, {
+      chain: ['windows-acl'],
+      electronRuntime: false,
+      windowsAclRunnerArgs: [process.execPath, 'windows-acl-runner.js'],
+    })
+    expect(sandbox.confine(['true'], RO).environment).toBeUndefined()
+  })
+
+
 })

@@ -16,6 +16,8 @@ Two hard blockers sat in the way. All 217 workspace manifests set `private: true
 
 ## Decision
 
+The GitHub publication ownership and job details in this note are superseded by [validation-only GitHub Actions](2026-08-14-validation-only-github-actions.md). This note continues to own the three package-family boundaries, versioning, package metadata, release scripts, and credential-free pack and installed-package validation.
+
 ### Three independent sequences
 
 `packages/`, `vendor/`, and `native/` each have one bump sequence and one publication, sharing no version, no trigger, and no waiting. Releasing dsh does not republish vendor; releasing vendor does not republish native.

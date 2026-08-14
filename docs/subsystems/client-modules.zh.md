@@ -2,7 +2,7 @@
 
 [English](client-modules.md) | 中文
 
-Web 插件表：[dsh-client-modules](../../packages/client/modules) 中 client 模块系统的 Node 半，以 `ctx.clientModules`（`ClientModuleRegistry`）形式提供。它扫描宿主 Loader 的 entry，找出声明了 `dsh.client` 的包，组合出 `window.__DSH_BOOT__` entry 图，在 `/plugins/<id>/client.js` 提供各个 bundle，并经 index 转换（index tap）注入启动 manifest（元数据清单）——这是同一个服务的四个面。它是 Web GUI 栈的一项可选能力，不属于 agent loop（智能体循环）主干，并且是 [dsh-host-webserver](../../packages/host/webserver) 的消费方：[web-server.md](web-server.md) 所述的载体提供本服务注册的前缀路由与 index 转换。同一个包的浏览器半（`ctx.modules`，即拉取并物化这些 bundle 的 lazy CJS 模块表）属于内核机件，记录在[包 README](../../packages/client/modules/README.md)中，不在本页。
+Host 客户端插件表位于 [dsh-client-modules](../../packages/client/modules)，以 `ctx.clientModules`（`ClientModuleRegistry`）形式提供。它扫描 Host Loader entry，找出声明了 `dsh.client` 的 package，并始终组合 `window.__DSH_BOOT__` entry 图。存在 `ctx.webServer` 时，它提供 `/plugins/<id>/client.js`，并通过 index tap 注入 manifest。Desktop profile 禁用该 HTTP 载体；Electron 读取 `graph()` 与 `clientPath(id)`，通过 `dsh://bundle` 提供 bundle，并经 preload 注入 manifest。这项可选 GUI 能力不属于 agent-loop 主干。同一 package 的浏览器半（`ctx.modules`，即拉取并物化这些 bundle 的 lazy CJS 模块表）属于内核机件，记录在[包 README](../../packages/client/modules/README.md)中。
 
 源码：[`packages/client/modules/src/client/manifest.ts`](../../packages/client/modules/src/client/manifest.ts)
 
@@ -52,9 +52,9 @@ interface WebBootGraph {
 
 包元数据——包括「非 client 包」这一否定结论——按名缓存且永不过期：插件集合的变更在重启后生效。fiber 重启原样复用其行与 rev；bundle 内容变更只经 `rebuilt()` 到达图。
 
-## bundle 路由与 index 转换
+## 载体发布
 
-`GET`/`HEAD /plugins/<id>/client.js` 以 `no-cache` 从磁盘提供已注册的 bundle（锚定一致性的是 rev 查询参数，而非 HTTP 缓存）；其他方法返回 405。未知 id——或已注册、但 bundle 因尚未构建而不可读的行——回应一个大声的 404，而不是让载体的 SPA 回退把 HTML 当作 JavaScript 发出。index 转换在每次 index 渲染时注入当前图，因此刷新页面总是针对实时组合启动。
+Web 载体从磁盘提供 `GET`/`HEAD /plugins/<id>/client.js`，设置 `no-cache`，并在每次 index 渲染时注入当前依赖图；其他 method 返回 405，未知或不可读的 bundle id 返回 404，而不会落到 SPA HTML。Electron 载体不提供 `webServer`，直接从 registry 获取同一个依赖图和经过授权的绝对 bundle path，再由 main-process `dsh://bundle` handler 发布。因此，禁用任一种发布机制都不会移除依赖图组合。
 
 ## 服务
 
@@ -74,7 +74,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.clientModules` — `ClientModuleRegistry`
 
-The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index tap. Construction runs the activation scan synchronously — a malformed declaration or missing bundle among the already-loaded entries aggregates into one loud throw (FAILED fiber; the boot activation audit reports it).
+The client plugin table: incremental `dsh.client` scan, carrier-independent graph composition, optional Web publication, and the HMR node half's registration and notification service. Construction runs the activation scan synchronously, so malformed declarations and missing bundles among already-loaded entries fail the owning fiber before a carrier reads the graph.
 
 ```ts cordis-catalog
 /**
@@ -114,5 +114,13 @@ onRebuilt(listener: (id: string, rev: string) => void): () => void
 onGraphChanged(listener: () => void): () => void
 ```
 
-Source: [`packages/client/modules/src/index.ts:184`](../../packages/client/modules/src/index.ts)
+Source: [`packages/client/modules/src/index.ts:185`](../../packages/client/modules/src/index.ts)
+
+<a id="ctxdesktopruntime--desktopruntime"></a>
+
+### `ctx.desktopRuntime` — `DesktopRuntime`
+
+Runtime values that release Electron-only rows after this bundle mounts.
+
+Source: [`packages/bundle/desktop-app/src/index.ts:14`](../../packages/bundle/desktop-app/src/index.ts)
 <!-- END GENERATED cordis-surface -->

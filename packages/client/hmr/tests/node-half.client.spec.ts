@@ -70,13 +70,17 @@ function fakeHttpServer(routes: WebRoute[]): WebServer {
   return fake as WebServer
 }
 
-async function mount(clientModuleHost: FakeHost, webServer: WebServer) {
+async function mount(
+  clientModuleHost: FakeHost,
+  webServer: WebServer | undefined,
+  transport: 'web' | 'electron' = 'web',
+) {
   const ctx = new Context()
   ctx.provide('clientModules', clientModuleHost)
-  ctx.provide('webServer', webServer)
+  if (webServer !== undefined) ctx.provide('webServer', webServer)
   const fiber = ctx.plugin(
     { inject: [...inject], Config, apply },
-    { pollIntervalMs: POLL_MS },
+    { pollIntervalMs: POLL_MS, transport },
   )
   await fiber.await()
   return fiber
@@ -107,6 +111,23 @@ describe('hmr node half', () => {
     writeFileSync(bundle, 'v3-even-longer')
     await new Promise(resolve => setTimeout(resolve, POLL_MS * 4))
     expect(clientModuleHost.rebuiltCalls).toHaveLength(0)
+  })
+
+  it('watches bundles without a Web server for the Electron manifest carrier', async () => {
+    const bundle = join(dir, 'electron.js')
+    writeFileSync(bundle, 'v1')
+    const clientModuleHost = fakeClientModuleHost(new Map([['pkg-electron', bundle]]))
+    const fiber = await mount(clientModuleHost, undefined, 'electron')
+    expect(clientModuleHost.rebuiltCalls).toEqual(['pkg-electron'])
+    clientModuleHost.rebuiltCalls.length = 0
+
+    await new Promise(resolve => setTimeout(resolve, POLL_MS * 2))
+    writeFileSync(bundle, 'v2-longer')
+    await vi.waitFor(
+      () => { expect(clientModuleHost.rebuiltCalls).toContain('pkg-electron') },
+      { timeout: 3_000 },
+    )
+    await fiber.dispose()
   })
 
   it('follows graph changes: rows added after activation get watched', async () => {

@@ -114,6 +114,9 @@ export function resolveProfileDir(name: string, home: string = resolveDshHome())
 export const PROFILE_TEMPLATES: Record<string, readonly string[]> = {
   web: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
   headless: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
+  // Electron reuses the Web client roster; dsh-desktop-app replaces the
+  // HTTP/browser-only rows with the embedded carrier and native providers.
+  desktop: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-desktop-app'],
 }
 
 /** Installation-owned bundle tuples normalized to the shipped template. */

@@ -14,3 +14,6 @@ export type PluginsEventFrame =
 
 /** System SSE endpoint pushing graph/rebuilt frames (wire protocol constant). */
 export const EVENTS_ENDPOINT = '/plugins/events'
+
+/** Shared bundle-poll interval for the Host watcher and Electron renderer receiver. */
+export const DEFAULT_POLL_INTERVAL_MS = 500

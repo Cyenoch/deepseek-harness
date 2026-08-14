@@ -19,6 +19,8 @@ import { createInterface } from 'node:readline/promises'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { validateTarballPayload } from './publication-payload.ts'
+import { DSH_BUILD_ONLY_MANIFESTS } from './release/families.ts'
+import { isEntry } from './release/process.ts'
 
 const DEFAULT_REGISTRY = 'https://registry.npm.harnessment.com'
 const DEFAULT_OUTPUT_DIRECTORY = '.artifacts/npm-baseline'
@@ -235,7 +237,7 @@ class DetachedWorktree {
 }
 
 /** Discovers and stages every package published in one repository baseline. */
-class WorkspacePackageSet {
+export class WorkspacePackageSet {
   private constructor(
     readonly packages: PackageTarget[],
     readonly baseVersion: string,
@@ -254,26 +256,30 @@ class WorkspacePackageSet {
       throw new Error(`package.json must have a stable X.Y.Z version, got ${baseVersion}`)
     }
     for (const manifestPath of manifestPaths) {
-      const manifest = readObject(resolve(root, manifestPath))
-      const name = expectString(manifest, 'name', manifestPath)
-      const version = expectString(manifest, 'version', manifestPath)
-      const isVendored = manifestPath.startsWith('vendor/')
+      const normalized = manifestPath.replaceAll('\\', '/')
+      // Build-only applications participate in the workspace but never enter
+      // the npm publication baseline.
+      if (DSH_BUILD_ONLY_MANIFESTS[normalized] === true) continue
+      const manifest = readObject(resolve(root, normalized))
+      const name = expectString(manifest, 'name', normalized)
+      const version = expectString(manifest, 'version', normalized)
+      const isVendored = normalized.startsWith('vendor/')
       // Vendored packages are rescoped too (vendor/README.md), so publication
       // never carries an upstream name that would squat it on the registry.
       if (!name.startsWith('@deepseek-ai/')) {
-        throw new Error(`${manifestPath} must name an @deepseek-ai package`)
+        throw new Error(`${normalized} must name an @deepseek-ai package`)
       }
       if (name === '@deepseek-ai/dsh-root') {
-        throw new Error(`${manifestPath} unexpectedly selected the workspace root`)
+        throw new Error(`${normalized} unexpectedly selected the workspace root`)
       }
       if (names.has(name)) throw new Error(`duplicate package name: ${name}`)
       if (!isVendored && version !== baseVersion) {
-        throw new Error(`${manifestPath} has version ${version}; expected ${baseVersion}`)
+        throw new Error(`${normalized} has version ${version}; expected ${baseVersion}`)
       }
       names.add(name)
       packages.push({
         name,
-        directory: dirname(manifestPath),
+        directory: dirname(normalized),
         origin: isVendored ? 'vendor' : 'harness',
       })
     }
@@ -1075,9 +1081,11 @@ async function main(): Promise<void> {
   throw new Error(`unknown command: ${command}`)
 }
 
-try {
-  await main()
-} catch (error: unknown) {
-  console.error(`publish-npm-baseline: ${error instanceof Error ? error.message : String(error)}`)
-  process.exitCode = 1
+if (isEntry(import.meta.url)) {
+  try {
+    await main()
+  } catch (error: unknown) {
+    console.error(`publish-npm-baseline: ${error instanceof Error ? error.message : String(error)}`)
+    process.exitCode = 1
+  }
 }

@@ -224,6 +224,7 @@ export class PwshLocalExecutor extends ShellExecutor {
     stdoutMaxBytes: number,
     signal: AbortSignal | undefined,
     argv: readonly string[],
+    environment: Readonly<Record<string, string>> | undefined,
   ): SubprocessSpawnSpec {
     const collect = (maxBytes: number): SubprocessCollect =>
       ({ maxBytes, spill: { maxBytes: this.config.maxSpillBytes } })
@@ -237,7 +238,7 @@ export class PwshLocalExecutor extends ShellExecutor {
       },
       graceMs: this.config.graceMs,
       signal,
-      env: { ...ENV_OVERRIDES, ...spec.env, ...spec.dshEnv },
+      env: { ...ENV_OVERRIDES, ...spec.env, ...spec.dshEnv, ...environment },
     }
   }
 
@@ -256,11 +257,21 @@ export class PwshLocalExecutor extends ShellExecutor {
     return this.runArgv(spec, this.argv(spec))
   }
 
-  /** Foreground run of an exact argv (the confining subclass re-wraps it). */
-  protected async runArgv(spec: ShellExecSpec, argv: readonly string[]): Promise<ShellRunResult> {
+  /**
+   * Run an exact argv with this executor's foreground lifecycle.
+   * @param spec - resolved execution settings and caller-owned command metadata.
+   * @param argv - exact executable and arguments to hand to `ctx.subprocess`.
+   * @param environment - runner-required entries layered after caller and DSH values.
+   * @returns the settled foreground result with collected output and cause facts.
+   */
+  protected async runArgv(
+    spec: ShellExecSpec,
+    argv: readonly string[],
+    environment?: Readonly<Record<string, string>>,
+  ): Promise<ShellRunResult> {
     // One deadline combines timeout and upstream cancellation; disposal clears its timer.
     using d = deadline(spec.signal, spec.timeoutMs, 'BASH_TIMEOUT')
-    const handle = this.ctx.subprocess.spawn(this.spawnSpec(spec, spec.stdoutMaxBytes, d.signal, argv))
+    const handle = this.ctx.subprocess.spawn(this.spawnSpec(spec, spec.stdoutMaxBytes, d.signal, argv, environment))
     const outcome = await handle.done
     const collected = PwshLocalExecutor.collected(handle)
     // Only this executor's timeout reason counts as timedOut; outer deadlines count as aborts.
@@ -280,10 +291,20 @@ export class PwshLocalExecutor extends ShellExecutor {
     return this.startArgv(spec, this.argv(spec))
   }
 
-  /** Background start of an exact argv (the confining subclass re-wraps it). */
-  protected startArgv(spec: ShellExecSpec, argv: readonly string[]): ShellProcess {
+  /**
+   * Start an exact argv with this executor's background lifecycle.
+   * @param spec - resolved execution settings and caller-owned command metadata.
+   * @param argv - exact executable and arguments to hand to `ctx.subprocess`.
+   * @param environment - runner-required entries layered after caller and DSH values.
+   * @returns the live background handle; spawn rejection settles it as killed.
+   */
+  protected startArgv(
+    spec: ShellExecSpec,
+    argv: readonly string[],
+    environment?: Readonly<Record<string, string>>,
+  ): ShellProcess {
     // Background runs ignore timeoutMs; callers stop them through kill() or spec.signal.
-    const running = this.ctx.subprocess.spawn(this.spawnSpec(spec, this.config.maxOutputBytes, spec.signal, argv))
+    const running = this.ctx.subprocess.spawn(this.spawnSpec(spec, this.config.maxOutputBytes, spec.signal, argv, environment))
     const collected = PwshLocalExecutor.collected(running)
 
     // A spawn failure produces no process output, so the subprocess service has nothing

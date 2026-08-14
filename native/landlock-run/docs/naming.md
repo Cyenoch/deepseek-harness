@@ -23,7 +23,7 @@ The `NALR_` prefix (Node Addon Landlock Run) is reserved for build/test orchestr
 NALR_REQUIRE_LANDLOCK   test-only: an unenforcing kernel fails instead of skipping
 ```
 
-Runtime binaries and entry packages read NO environment variables — a runtime safety rule ([AGENTS.md](../AGENTS.md)), not a naming convention. Do not include the npm scope in environment variable names.
+`DSH_LANDLOCK_RUN_PATH` is the desktop disk override: a nonblank value must be an absolute regular file, and `launcherPath()` does not consult the npm platform package. Unset, empty, and whitespace-only values keep platform-package resolution. Do not include the npm scope in environment variable names.
 
 ## C symbols
 

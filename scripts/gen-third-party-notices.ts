@@ -3,8 +3,9 @@
  * external dependency named by a workspace `package.json`, the vendored-package
  * manifest in `vendor/README.md`, the Python `pyproject.toml` files, and the
  * pnpm patch list. License and repository metadata come from the installed
- * store, so the tree must be installed. `--check` verifies the committed
- * artifact. Tier policy and ownership live in
+ * store for npm and from a committed map for Python, so the tree must be
+ * installed. `--check` verifies the committed artifact. Tier policy and
+ * ownership live in
  * `.agents/notes/implemented/process/2026-07-30-generated-third-party-notices.md`.
  */
 
@@ -96,8 +97,8 @@ const BUILD_TIME_TOOLS = [
     name: '@yao-pkg/pkg',
     license: 'MIT',
     repo: 'https://github.com/yao-pkg/pkg',
-    role: 'invoked by `scripts/build-exe-for-python-sdk.ts` to assemble the single-file SDK runtime executable',
-    pinSource: 'scripts/build-exe-for-python-sdk.ts',
+    role: 'invoked by `scripts/exe-closure.ts` to assemble the packaged Python SDK runtime',
+    pinSource: 'scripts/exe-closure.ts',
   },
 ]
 
@@ -695,7 +696,7 @@ DeepSeek Harness is licensed under [MIT](LICENSE). It depends on the third-party
 
 This file lists **direct** dependencies declared by the workspace and the explicitly disclosed official Claude platform payload closure. It is generated from the workspace manifests by \`scripts/gen-third-party-notices.ts\`: a pre-commit hook regenerates it whenever a staged file changes one of its inputs, and \`scripts/gen-third-party-notices.spec.ts\` asserts in the test lane that the committed bytes match. Deleting a manifest runs no hook, so that case is caught by the assertion instead. Run \`pnpm run verify-third-party-notices\` for the standalone check.
 
-The complete npm transitive closure, including the Landlock launcher workspace, is recorded with exact pinned versions in [\`pnpm-lock.yaml\`](pnpm-lock.yaml) — inspect it with \`pnpm licenses list\`. The Python closure is recorded separately in [\`python/sdk/uv.lock\`](python/sdk/uv.lock).
+The complete npm transitive closure, including Electron and the Landlock launcher workspace, is recorded with exact pinned versions in [\`pnpm-lock.yaml\`](pnpm-lock.yaml) — inspect it with \`pnpm licenses list\`. The Python closure is recorded separately in [\`python/sdk/uv.lock\`](python/sdk/uv.lock).
 
 ## Vendored source (\`vendor/\`)
 

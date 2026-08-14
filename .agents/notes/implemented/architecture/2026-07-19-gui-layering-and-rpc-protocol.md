@@ -8,14 +8,14 @@ English | [中文](2026-07-19-gui-layering-and-rpc-protocol.zh.md)
 
 ## Problem
 
-We need a UI integration layer. Beyond the existing ACP/stdio baseline, more product clients are coming — Web (server), Electron, and others. We call them Clients and want the following capabilities:
+We need a UI integration layer beyond the existing ACP/stdio baseline for the Web server, Electron, and later product clients. We call them Clients and require the following capabilities:
 
 - One `dsh` process supporting both `dsh web` (serve) and `dsh --profile headless` (headless) — one process, two modes (a design reservation)
 - Launching inside Electron with the same Web technologies as `dsh web`
 
 That demands a stable layered responsibility model in the engineering codebase, so future clients plug in cleanly.
 
-At the same time the physical channels differ per consumer (browser HTTP/WebSocket, in-process fetch/SSE, IPC later), so we also need a channel-independent message model and a single contract source of truth — "adding a method" and "swapping a carrier" must not entangle each other, and every message on the wire must be type-validatable, observable, and reconcilable.
+At the same time the physical channels differ per consumer (browser HTTP/WebSocket, Electron preload IPC, in-process fetch/SSE), so we also need a channel-independent message model and a single contract source of truth — "adding a method" and "swapping a carrier" must not entangle each other, and every message on the wire must be type-validatable, observable, and reconcilable.
 
 ## Decision
 
@@ -32,10 +32,10 @@ Directories layer as follows:
 - `apps/` holds the externally exported applications, assembled from Client / Host mixtures.
     - `apps/web` (`dsh-web-frontend`) is the vite application: a thin `main.ts` over the shell API exported by `dsh-client-web`.
     - `apps/cli` (`@deepseek-ai/dsh`) dispatches commands: `dsh web` = Host + webserver + the built `dsh-web-frontend` dist; `dsh --profile headless` = [a direct core Agent/Session entry point](2026-08-09-headless-direct-core-entry-point.md), with zero Host, HTTP, or browser layer.
-    - A future Electron application reuses the same web client packages over an IPC fetch carrier.
+    - `apps/desktop` (`@deepseek-ai/dsh-desktop`) is the Electron application: its main process embeds the desktop profile Host and its preload exposes a typed IPC Fetch carrier to the shared Web client packages, with no HTTP server or backend child ([desktop host](2026-08-14-electron-embedded-desktop-host.md)).
 
 ```
-apps/*  (applications: apps/web = vite app, apps/cli = bin dispatch)
+apps/*  (applications: Web frontend, CLI launcher, Electron desktop application)
   │ consume
   ▼
 packages/host/*                      packages/client/*
@@ -64,10 +64,10 @@ On the protocol side: TS interfaces (`packages/host/apiproxy/src/api/`, zero Nod
 |---|---|---|---|
 | Front layer | `dsh-host-apiproxy` | TS/zod definitions (api/) + the fetch abstraction (fetch/: handler + client base class) | Keep it simple — every consumer needs it; importable from Node and browser alike; protocol content in the "Message protocol" sections below; clients must not bypass api through ctx |
 | Assembly layer | `dsh-host-runtime` | Plugin composition + ApiProxy integration + the web UI plugin mount (in-memory Loader tree over the eight dsh.client packages); home of host-level configuration (defaults/persistenceRoot, future user profile) | Which plugins mount and with what defaults is decided only here; shells must not alter the assembly |
-| Carrier layer | `dsh-host-webserver` | Web HTTP and upgrade: static serving + `/api/*`→handler forwarding + WebSocket upgrade route + close semantics; plugin bundle endpoint + `__DSH_BOOT__` manifest injection (fed by the web plugin registry) | Web (browser access) only; zero workspace dependencies (the registry arrives by structural injection); Electron does not reuse it |
+| Carrier layer | `dsh-host-webserver` | Web HTTP and upgrade: static serving + `/api/*`→handler forwarding + WebSocket upgrade route + close semantics; plugin bundle endpoint + `__DSH_BOOT__` manifest injection (fed by the web plugin registry) | Browser access only; zero workspace dependencies (the registry arrives by structural injection); Electron uses the same Fetch dispatcher through preload IPC and does not mount this package |
 | Client libraries | `dsh-client-ui-slots` / `dsh-client-web-react` / `dsh-client-ui-primitives` | Slot registry core / ctx↔React glue / pure React atoms | Zero cordis runtime dependency in components; seeded into the loader module table by the shell |
 | Client plugins | `dsh-client-connection` / `dsh-client-runtime` / `dsh-client-ui-theme` / `dsh-client-i18n` / `dsh-client-ui-layout` / `dsh-client-ui-sidebar` / `dsh-client-ui-conversation` / `dsh-client-ui-trajectory` | Browser-side cordis plugin tree (wire consumer, core services, theme, i18n, layout, sidebar, conversation, trajectory) — see the web client architecture note | Dual entry (node half = empty apply; implementation in `src/client/`); the consumption face goes exclusively through ApiProxy |
-| Application | `@deepseek-ai/dsh` (apps/cli) + `dsh-web-frontend` (apps/web, the vite application) | Coarse bin dispatch + one assembly module per application (web.ts / headless.ts); the vite app is a thin main over the `dsh-client-web` shell surface | Applications use dynamic imports so they never load each other; workspace knowledge like dist location stays in the app |
+| Application | `@deepseek-ai/dsh` (apps/cli) + `dsh-web-frontend` (apps/web, the vite application) + `@deepseek-ai/dsh-desktop` (apps/desktop) | Coarse bin dispatch + one assembly module per application (web.ts / headless.ts); the Vite app is a thin main over the `dsh-client-web` shell surface; Electron main embeds the desktop profile and owns native lifecycle plus preload authority | Applications use dynamic imports so they never load each other; workspace knowledge such as dist location stays in the app |
 
 #### Naming rule
 
@@ -75,11 +75,11 @@ Packages under `packages/host/*` and `packages/client/*` **must carry the direct
 
 #### How to integrate a new application (operational checklist)
 
-1. **Pick a fetch impersonation**: browser same-origin HTTP / in-process `host.handler.fetch` injection / your own transport-aspect subclass (e.g. future Electron IPC, see the "Subclass table" below).
-2. **Write an assembly module under `apps/`**: `startHost()` + a client subclass + the application's private signal/print/exit semantics; a mixture never becomes a package — assembly is written in the app.
+1. **Pick a Fetch carrier**: browser same-origin HTTP / Electron preload IPC / in-process `host.handler.fetch` injection / another transport-aspect subclass (see the "Subclass table" below).
+2. **Write an assembly module under `apps/`**: `runProfile()` or `startHost()` + a client subclass + the application's private signal/print/exit semantics; a mixture never becomes a package — assembly is written in the app.
 3. **Import `dsh-host-webserver` only if you need HTTP carriage**, otherwise zero ports.
 
-The two existing applications preserve the division: the Web application mounts Host, carrier, and browser composition, while `dsh --profile headless` mounts a direct core runner with zero Host, HTTP, or ports. ACP-class protocol bridges do not follow the client-carrier checklist: they expose core to the external ecosystem and mount directly via `ctx.plugin(entry-point plugin)` without fetch.
+The three applications preserve the division: Web mounts the Host, Web carrier, and browser composition; Electron embeds the Host and carries Fetch over preload IPC with zero ports; `dsh --profile headless` mounts a direct core runner with zero Host, HTTP, or browser layer. ACP-class protocol bridges do not follow the client-carrier checklist: they expose core to the external ecosystem and mount directly via `ctx.plugin(entry-point plugin)` without Fetch.
 
 ## Message protocol
 
