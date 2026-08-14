@@ -123,7 +123,7 @@ describe('Electron desktop workflow', () => {
       .toBe('pnpm --dir apps/desktop exec electron-builder ${{ matrix.builder-args }}')
     expect(namedStep(steps, 'Verify artifact set').run)
       .toContain('scripts/verify-desktop-artifacts.ts')
-    expect(namedStep(steps, 'Verify packaged native module').run)
+    expect(namedStep(steps, 'Verify packaged Agent runtime').run)
       .toBe('pnpm exec tsx scripts/smoke-desktop-native-module.ts --target="$TARGET" apps/desktop/release')
     expect(usesStep(steps, 'actions/upload-artifact@').uses).toBe('actions/upload-artifact@v6')
     expect(usesStep(steps, 'actions/upload-artifact@').with).toEqual({

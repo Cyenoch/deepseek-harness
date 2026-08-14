@@ -159,8 +159,8 @@
     "asarUnpack": [
       "**/*.node",
       "**/node-pty/**",
-      "**/@vscode/ripgrep/bin/**",
-      "**/landlock-run/**"
+      "**/@vscode/ripgrep-*/bin/**",
+      "**/@deepseek-ai/node-addon-landlock-run-*/bin/**"
     ],
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "mac": {

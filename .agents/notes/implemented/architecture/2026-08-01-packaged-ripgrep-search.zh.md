@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-`@deepseek-ai/dsh-tool-fs-search` 现在运行 PACKAGED（打包的）ripgrep 二进制（`@vscode/ripgrep`，一个 npm 依赖，其可选平台包随附二进制），经由 `ctx.subprocess` seam：`runRipgrep()` 以纯 argv 向量 spawn `rgPath`，向量前缀 `--no-config`，配以 collect 模式 stdout/stderr、`graceMs` 与转发的 `exec.signal`。`rgPath` 在首次调用时懒解析（进程内 memoize）：`@vscode/ripgrep` 在模块求值阶段解析其平台包，静态导入会把平台包缺失/损坏（`--omit=optional`、安装不全）变成 Loader 组合加载失败——这正是本次改动要消除的加载期失败模式。不再有 shell 层，执行路径上的 shell 引号边界随之消失；`singleQuote` 工具与其 shell spawn 测试一并删除。原始流使用 seam 的诊断尾部 collect 形态（无 spill 文件——工具从不读取原始 spill 路径；lossy stdout 读取以 `SEARCH_RAW_OUTPUT_OVERFLOW` 失败）。终止宽限与 stderr 尾部预算成为经校验的 `Config` 字段（`graceMs` 默认 3000，`stderrMaxBytes` 默认 64 KiB），不再继承自 bash-local 的配置。注册变为无条件——加载期 `command -v rg` 探针与条件注册决策被删除，连同那条 "rg not found" 警告。本包注入 `tools`、`systemPrompt` 与 `subprocess`。
+`@deepseek-ai/dsh-tool-fs-search` 现在运行 PACKAGED（打包的）ripgrep 二进制（`@vscode/ripgrep`，一个 npm 依赖，其可选平台包随附二进制），经由 `ctx.subprocess` seam：`runRipgrep()` 以纯 argv 向量 spawn `rgPath`，向量前缀 `--no-config`，配以 collect 模式 stdout/stderr、`graceMs` 与转发的 `exec.signal`。`rgPath` 在首次调用时懒解析（进程内 memoize）：`@vscode/ripgrep` 在模块求值阶段解析其平台包，静态导入会把平台包缺失/损坏（`--omit=optional`、安装不全）变成 Loader 组合加载失败——这正是本次改动要消除的加载期失败模式。二进制位于普通包解析之外的部署可以设置 `DSH_RIPGREP_PATH`；首次调用要求该值是绝对路径上的普通文件，值无效时绝不回退。不再有 shell 层，执行路径上的 shell 引号边界随之消失；`singleQuote` 工具与其 shell spawn 测试一并删除。原始流使用 seam 的诊断尾部 collect 形态（无 spill 文件——工具从不读取原始 spill 路径；lossy stdout 读取以 `SEARCH_RAW_OUTPUT_OVERFLOW` 失败）。终止宽限与 stderr 尾部预算成为经校验的 `Config` 字段（`graceMs` 默认 3000，`stderrMaxBytes` 默认 64 KiB），不再继承自 bash-local 的配置。注册变为无条件——加载期 `command -v rg` 探针与条件注册决策被删除，连同那条 "rg not found" 警告。本包注入 `tools`、`systemPrompt` 与 `subprocess`。
 
 退出语义仍由工具拥有：退出码 0 为有结果的成功，1 为成功的空搜索，其余归入既有 `SEARCH_*` 词汇（无效模式、启动失败、信号杀死、原始输出溢出）。超时是挂在工具定义上的协作式工具调用预算：`@deepseek-ai/dsh-tool-call-timeout-policy` 中止 `exec.signal`，subprocess seam 的终止升级提供硬终止，工具报告 `SEARCH_ABORTED`。工作目录为会话 header cwd（存在时），否则为 `process.cwd()`——不再有执行器配置可供默认化，因此回退由工具自己拥有。
 
@@ -22,7 +22,7 @@ Status: implemented
 
 **保留 bash seam 与探针，仅把 `rg` 记为必需宿主依赖。** 否决：宿主依赖正是本次改动要消除的失败模式，而让发现工具支持 Windows 正是此举的目的；写进文档的依赖仍是依赖。
 
-**让 `rgPath` 可注入（配置字段或环境变量覆盖），让测试与快照继续使用替身二进制。** 否决：这会新增一个只有测试钩子会消费的公开部署面，而真实二进制本身具有足够的确定性——通过 fixture（测试前置数据）的 mtime 即可直接钉住；打包二进制就是部署形态，测试应当拿它来测。
+**把 `rgPath` 设为工具配置字段，或让测试与快照通过部署覆盖使用替身。** 否决：模型可见配置不负责可执行文件的放置位置，测试也可以通过 fixture（测试前置数据）的 mtime 直接钉住真实二进制。`DSH_RIPGREP_PATH` 仅作为打包态 Electron 等运行时使用的启动期部署逃生口，不是测试替换机制。
 
 **改用纯 JS 的 glob/搜索引擎（如 `picomatch`/`tinyglobby`）。** 否决：[依赖替换审计](../../rejected/simplification/2026-07-26-dependency-swaps-rejected-by-nih-audit.md) 已基于「不存在 glob 引擎」的证据否决过该方向；ripgrep 语义（`--sort=modified`、VCS 剪枝、JSON 传输、正则方言）就是工具约定。
 
@@ -34,5 +34,6 @@ Status: implemented
 - 原始输出溢出路径的形态改变：旧的 bash 承载路径继承了 bash-local 常开的 spill，可能留下没人读的多 MB 临时文件；subprocess seam 现在无 spill 收集，溢出是纯粹的错误（`SEARCH_RAW_OUTPUT_OVERFLOW`，"narrow pattern, path, or include and retry"），不返回任何内容。
 - 加载期失败模式改变：subprocess seam 损坏现在让首次搜索调用失败（`SEARCH_FAILED`），而非通过探针使插件加载失败；二进制缺失是带打包路径的启动失败，而不是 PATH 问题。
 - 集成套件的 fixture 去掉了 Windows 无法表示的文件名（名称含 `"`），保证套件在每个平台都能重放。
+- desktop 产物冒烟测试会启动打包后的 profile，并通过真实 Standard Agent 执行 `glob` 与 `grep`，让 ASAR 路径解析、物理二进制放置、subprocess 启动与工具解码成为同一条发布 gate 路径。
 - 重新生成 `THIRD_PARTY_NOTICES.md` 暴露了一个由新依赖带出的潜在生成器 bug：Node 的 `fs.globSync` 返回操作系统原生分隔符，因此在 Windows 上 notices 分层中带 `/` 后缀的 dev 区前缀永远匹配不上，dev-only 包（测试工具、support 叶子）被错分为运行时。生成器现在在入口处归一化 manifest（元数据清单）路径，notices 与平台无关。
 - `@vscode/ripgrep` 依赖为运行时层增加其 MIT 行；pnpm 11 截断的虚拟存储目录名需要在 notices 生成器的元数据查找中增加内容扫描回退。

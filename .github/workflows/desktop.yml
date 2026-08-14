@@ -116,7 +116,7 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: pnpm exec tsx scripts/verify-desktop-artifacts.ts --target="$TARGET" apps/desktop/release
 
-      - name: Verify packaged native module
+      - name: Verify packaged Agent runtime
         shell: bash
         env:
           TARGET: ${{ matrix.target }}

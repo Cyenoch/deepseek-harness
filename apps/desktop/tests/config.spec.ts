@@ -11,6 +11,7 @@ interface BuilderConfig {
   electronLanguages: string[]
   files: string[]
   extraResources: Array<{ from: string; to: string }>
+  asarUnpack: string[]
   artifactName: string
   mac: { identity: null; target: string[] }
   linux: { target: string[] }
@@ -69,6 +70,8 @@ describe('desktop Electron configuration', () => {
       { from: '../../LICENSE', to: 'LICENSE' },
       { from: '../../THIRD_PARTY_NOTICES.md', to: 'THIRD_PARTY_NOTICES.md' },
     ]))
+    expect(build.asarUnpack).toContain('**/@vscode/ripgrep-*/bin/**')
+    expect(build.asarUnpack).toContain('**/@deepseek-ai/node-addon-landlock-run-*/bin/**')
   })
 
   it('builds unsigned inspection artifacts for each supported operating system', () => {

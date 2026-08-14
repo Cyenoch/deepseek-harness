@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/postmortem/0005-packaged-electron-ripgrep-asar-path.md
+0005-packaged-electron-ripgrep-asar-path.md: b1440620d716db217c4905ca203bc3c4b466807a
+0005-packaged-electron-ripgrep-asar-path.zh.md: cbbea46c22d4dbe84a6c0e3dd4d0c13e568d3dd9

@@ -22,7 +22,9 @@ desktop profile 通过 `electron` 通知载体保持客户端插件 HMR 处于�
 
 Electron 不暴露 Node 内部 ESM loader。vendored Loader 的标准运行时 fallback 使用公开的 `createRequire` 解析，从配置树的 `ctx.baseUrl` 解析非相对插件名，再经动态 import 加载结果。任何不提供 Node 内部 loader 的 embedder 都因此保持同一套包归属规则，不需要 Electron 专用 alias 表。desktop 的 `package.json` 声明 Host peer 闭包，使 asar 包含 `runProfile` 会加载的每个 workspace 包；`electron-builder` 不跟随 `peerDependencies`，由 `verify-runtime-closure` 守住该列表。`app.ready` 之后，main 把 `join(app.getAppPath(), 'node_modules')` 前置到 `NODE_PATH` 并调用 `Module._initPaths()`。Electron 的 asar overlay 只对已经进入归档的路径可见，因此 `$DSH_HOME/profiles/node_modules` 指向 asar 的符号链接在磁盘上存在但无法解析；额外路径在父目录 walk 之后搜索，Loader 的 `baseUrl` 仍是 profile 目录。profile patch watcher 以 `root: []` 挂载 HMR；这一明确的仅配置模式只使用文件系统监听，而非空模块根仍要求 Node 内部 loader，并在其不可用时明确失败。
 
-Electron 持有原生目录选择器后端与会话导出保存对话框。desktop profile 显式挂载原生选择器客户端界面，使 Hero 与侧边栏 Workspace 入口在禁用 Web profile 的自适应选择器 row 后仍连接到该实现。导出数据从内嵌 Host 直接流入 mode 为 `0600` 的文件，并在失败后删除未完成文件。一个应用实例持有该 profile。关闭主窗口只会将其隐藏，内嵌 Host 与正在执行的任务会继续运行；托盘或菜单栏图标、macOS Dock 激活与再次启动应用都会恢复同一个窗口。只有显式退出应用才会开始 Host 有界关停，并在进程退出前提供八秒宽限。
+ASAR 策略把平台可执行文件留在 `app.asar.unpacked` 下。`@vscode/ripgrep` 与 Linux Landlock 入口包仍会经由虚拟 `app.asar` 模块路径解析各自的平台包，但 `child_process.spawn()` 无法执行这些路径。打包后的 main 会在 profile 启动前把 `DSH_RIPGREP_PATH` 以及 Linux 上的 `DSH_LANDLOCK_RUN_PATH` 设为匹配的物理 `app.asar.unpacked` 可执行文件，除非启动环境已经提供覆盖。每个包都会在使用前校验自己的覆盖；CLI 与开发态 Electron 继续使用普通包解析。
+
+Electron 持有原生目录选择器后端与会话导出保存对话框。desktop profile 显式挂载原生选择器客户端界面，使 Hero 与侧边栏 Workspace 入口在禁用 Web profile 的自适应选择器 row 后仍连接到该实现。在 Windows 上，选择器会在 JavaScript 子进程中运行阻塞式 COM 调用，其入口保留在 ASAR 内可读；只有当前 Electron 可执行文件的这次调用会收到 `ELECTRON_RUN_AS_NODE=1`，与打包后的 ACL runner 一致，且不会改变 main 的运行模式。导出数据从内嵌 Host 直接流入 mode 为 `0600` 的文件，并在失败后删除未完成文件。一个应用实例持有该 profile。关闭主窗口只会将其隐藏，内嵌 Host 与正在执行的任务会继续运行；托盘或菜单栏图标、macOS Dock 激活与再次启动应用都会恢复同一个窗口。只有显式退出应用才会开始 Host 有界关停，并在进程退出前提供八秒宽限。
 
 macOS 上主 `BrowserWindow` 使用 `hiddenInset`，红绿灯按钮位于 `x=12`、`y=12`。preload 的 `ElectronRendererBridge` 报告类型化的 `macos-hidden-inset` chrome 模式；renderer 围绕 14px 控件平衡侧边栏顶部间距，并在可交互控件上方暴露 32px 透明拖动条。其他平台保持默认 chrome。
 
@@ -42,6 +44,8 @@ macOS 上主 `BrowserWindow` 使用 `hiddenInset`，红绿灯按钮位于 `x=12`
 
 **把整个 `node_modules` 从 asar 解包。** 拒绝，因为它在磁盘上复制整份 JavaScript 图。`NODE_PATH` 无需解包这些包即可到达归档。
 
+**让文件系统搜索包推断 Electron 的解包路径。** 拒绝，因为 ASAR 布局属于 desktop 部署，而 `@deepseek-ai/dsh-tool-fs-search` 也运行于 CLI、远程环境和非 Electron embedder。其现有的已校验部署覆盖可以携带物理可执行文件路径，无需给该包增加 Electron 布局知识。
+
 **把安装包复制进 `$DSH_HOME`。** 拒绝，因为它分叉安装图并会过期。
 
 ## Consequences
@@ -52,4 +56,4 @@ macOS 上主 `BrowserWindow` 使用 `hiddenInset`，红绿灯按钮位于 `x=12`
 
 ## Testing
 
-源码 Playwright `_electron` e2e（`apps/web/tests/desktop-profile.e2e.ts`）钉住 renderer 载体与 Standard mode，并证明关闭原生窗口只会隐藏窗口且进程继续运行，随后显式退出能干净结束。Desktop 单元测试钉住协议、IPC 校验、应用图 `NODE_PATH` 解析及 Electron manifest revision 轮询。CI 在 `electron-builder` 之前校验 desktop manifest 的运行时闭包。未封装的 macOS arm64 `electron-builder --dir` 产物能在全新 `$DSH_HOME` 下启动内嵌 Host：主窗口为 1280×800，并显示 Choose workspace 与 Standard mode。实时开发探针在 Electron／Host PID 不变时修改并恢复了 `ui-conversation` Hero 标题，同时复现了共享 HMR 路径中 Hero 输入区恢复不完整的已知问题。
+源码 Playwright `_electron` e2e（`apps/web/tests/desktop-profile.e2e.ts`）钉住 renderer 载体与 Standard mode，并证明关闭原生窗口只会隐藏窗口且进程继续运行，随后显式退出能干净结束。Desktop 单元测试钉住协议、IPC 校验、应用图 `NODE_PATH` 解析、打包态可执行文件路径选择、Electron 子进程 Node 模式及 manifest revision 轮询。CI 在 `electron-builder` 之前校验 desktop manifest 的运行时闭包；其打包态运行时冒烟测试会在全新的 `$DSH_HOME` 下启动真实 desktop profile、创建 Standard Agent、核对平台对应的完整工具清单，并执行无需密钥的文件系统、搜索、shell、job、skill、todo、协作、workflow 与 code-runtime 路径。同一冒烟测试会加载打包后的 `node-pty` prebuild、直接执行已解包的 ripgrep 二进制；其 shell 调用经过生产沙箱实现，包括打包后的 Windows ACL runner。Windows 矩阵项还会打开并中止关闭打包后的原生目录选择器 worker，以证明第二个 Electron Node 模式子入口。未封装的 macOS arm64 `electron-builder --dir` 产物能在全新 `$DSH_HOME` 下启动内嵌 Host：主窗口为 1280×800，并显示 Choose workspace 与 Standard mode。实时开发探针在 Electron／Host PID 不变时修改并恢复了 `ui-conversation` Hero 标题，同时复现了共享 HMR 路径中 Hero 输入区恢复不完整的已知问题。
