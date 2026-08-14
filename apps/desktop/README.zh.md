@@ -10,6 +10,8 @@ DeepSeek Harness 原生应用。该私有工作区把 Electron、现有 Web rend
 
 Electron 在 `runProfile()` 组合内嵌 Host 期间先打开本地 supervisor 页面。Main 在组合前提供原生目录选择服务，读取已稳定的客户端模块图，然后通过特权 `dsh://app` 源提供 [`apps/web/dist`](../web/dist)。客户端 bundle 使用 `dsh://bundle` 协议；模块 id 选择已注册 bundle，revision query 是它的缓存键。HMR 期间，现有启动 URL 会按设计以 `no-cache` 读取该 id 的当前字节。
 
+在 macOS 上，main 会在组合 Host 前运行一次用户的登录 shell，并导入其中缺失的已导出变量。直接提供给 Electron 的变量保持更高优先级；PATH 保留既有查找顺序，只追加登录 shell 中尚未出现的目录。如果探测失败或结果不完整，应用会发出警告并保留原有继承环境。这样，Agent shell 命令可以使用与终端启动时相同的包管理器和版本管理器可执行文件，同时 shell 启动过程不会替换显式提供给应用的启动值。
+
 macOS 上主 `BrowserWindow` 使用 `hiddenInset`，红绿灯按钮位于 `x=12`、`y=12`。renderer 获得类型化的 `macos-hidden-inset` chrome 模式，围绕 14px 控件平衡侧边栏顶部间距，并在可交互控件上方暴露 32px 透明拖动条。其他平台保持默认 chrome。
 
 Renderer 启用 `contextIsolation`、Chromium 沙箱与 Web 安全，禁用 Node integration。Preload 只暴露 manifest 查询、Fetch 打开／读取／取消、会话导出保存与 supervisor 状态方法。Fetch IPC 只接受 `http://dsh.internal`，校验方法、header、body 大小与 main-frame 发送方，再通过私有 `MessagePort` 按 renderer 拉取节奏流式发送响应 chunk。即使文档源是 `dsh://app`，renderer 客户端也会把 Host URL 固定到该源。外部导航、新窗口、webview 与 Chromium 下载全部拒绝。
@@ -37,11 +39,11 @@ pnpm dev:desktop
 pnpm --dir apps/desktop run build
 ```
 
-`electron-builder` 把产物写入 `apps/desktop/release/`：macOS 为 DMG 与 ZIP，Linux 为 AppImage 与 DEB，Windows 为 NSIS EXE 与 MSI。`pnpm --dir apps/desktop run pack` 会创建可供本地检查的未封装应用。桌面工作流使用 GitHub 标准托管的 `macos-14` 与 `windows-2025` runner 构建受支持的 macOS arm64 和 Windows x64 目标，校验每组产物，并将其作为临时工作流产物上传。相关变更推送到 `master` 后，工作流会把两组产物和 `SHA256SUMS` 发布为无签名 GitHub Release。tag 为 `desktop-v<version>-g<完整 commit SHA>`，标题为 `DeepSeek Harness Desktop v<version> (<commit 前 12 个字符>)`。
+在仓库根目录中，`pnpm run package:desktop` 会生成当前平台的安装包，`pnpm run package:desktop:dir` 会生成可供本地检查的未封装应用。`electron-builder` 把产物写入 `apps/desktop/release/`：macOS 为 DMG 与 ZIP，Linux 为 AppImage 与 DEB，Windows 为 NSIS EXE 与 MSI。桌面工作流使用 GitHub 标准托管的 `macos-14` 与 `windows-2025` runner 构建受支持的 macOS arm64 和 Windows x64 目标，校验每组产物，并将其作为临时工作流产物上传。相关变更推送到 `master` 后，工作流会把两组产物和 `SHA256SUMS` 发布为无签名 GitHub Release。tag 为 `desktop-v<version>-g<完整 commit SHA>`，标题为 `DeepSeek Harness Desktop v<version> (<commit 前 12 个字符>)`。
 
 组合包包含仓库许可证、生成的 [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md)、Web distribution，以及 desktop 包的生产 `dependencies`。该列表是闭合的 Host peer 图：`electron-builder` 只跟随 `dependencies`，因此 `runProfile` 会加载的每个 workspace 包——包括 Service Definition peer——都必须写在这里。CI 在打包前对该 manifest 运行 `verify-runtime-closure`。原生 Node addon 与可执行文件会在其 loader 需要文件系统路径时从 ASAR 解包。打包后的 `node-pty` 使用其随包提供的 macOS arm64 与 Windows x64 prebuild，而不执行 Electron rebuild；包会排除其 `build/` 目录，防止 host 或陈旧的 Electron 二进制文件遮蔽目标 prebuild。打包后的 main 进程会把 `DSH_RIPGREP_PATH` 以及 Linux 上的 `DSH_LANDLOCK_RUN_PATH` 指向 `app.asar.unpacked` 中各自的平台二进制，除非启动环境已经提供这些部署覆盖；这是因为 `child_process.spawn()` 无法执行包解析返回的虚拟 `app.asar` 路径。每个受支持的 CI 矩阵项都会以 Node 模式运行打包后的 Electron 可执行文件，启动真实 desktop profile 与 Standard Agent，核对完整工具清单，并在上传产物前执行无需密钥的本地工具族以及打包后的 shell、workflow 和 code worker 路径；Windows 矩阵项还会打开并中止关闭打包后的原生目录选择器 worker。
 
-在 `runProfile` 之前，main 把 `<application path>/node_modules` 前置到 `NODE_PATH`，并重建 Node 的额外模块搜索路径。Loader 的 `createRequire` 仍锚定在 profile 目录：profile 本地包优先，然后是父目录 walk，然后是应用图。已打包的 `app.asar` 只对已经进入归档的路径可见，因此 profile fallback 指向 asar 的符号链接无法解析。
+在 `runProfile` 之前，main 会恢复 macOS 登录 shell 环境，再把 `<application path>/node_modules` 前置到 `NODE_PATH`，并重建 Node 的额外模块搜索路径。Loader 的 `createRequire` 仍锚定在 profile 目录：profile 本地包优先，然后是父目录 walk，然后是应用图。已打包的 `app.asar` 只对已经进入归档的路径可见，因此 profile fallback 指向 asar 的符号链接无法解析。
 
 ## 已知限制
 

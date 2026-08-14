@@ -10,6 +10,8 @@
 - textbox "Search sessions..."
 - button "View options":
   - img
+- button "Add workspace":
+  - img
 - tree "Sessions": No sessions yet
 - button "Settings":
   - img

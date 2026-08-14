@@ -15,6 +15,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
 import { runProfile } from '@deepseek-ai/dsh/profile-boot'
 import { exposeAppModuleGraph } from './app-module-graph.ts'
+import { hydrateDesktopLaunchEnvironment } from './launch-environment.ts'
 import { exposePackagedExecutables } from './packaged-executables.ts'
 import {
   ELECTRON_IPC_CHANNELS,
@@ -553,6 +554,7 @@ async function main(): Promise<void> {
   app.on('window-all-closed', () => { app.quit() })
 
   await app.whenReady()
+  await hydrateDesktopLaunchEnvironment()
   if (app.isPackaged) exposePackagedExecutables(process.resourcesPath)
   exposeAppModuleGraph(app.getAppPath())
   process.chdir(app.getPath('home'))

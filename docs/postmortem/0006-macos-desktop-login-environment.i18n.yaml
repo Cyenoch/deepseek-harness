@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/postmortem/0006-macos-desktop-login-environment.md
+0006-macos-desktop-login-environment.md: c2c21cdb28850af6fb3eff90f43dfb16b149c180
+0006-macos-desktop-login-environment.zh.md: 0e93225d408ed96c0443ae5771cc1d7e4c3c41b3

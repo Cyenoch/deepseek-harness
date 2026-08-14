@@ -41,10 +41,10 @@ pnpm run dev:desktop
 在目标操作系统上构建未签名原生产物：
 
 ```sh
-pnpm --dir apps/desktop run build
+pnpm run package:desktop
 ```
 
-`electron-builder` 会将产物写入 `apps/desktop/release/`：macOS（arm64/x64）为 DMG 和 ZIP，Linux x64 为 AppImage 和 DEB，Windows x64 为 NSIS EXE 和 MSI。产物未签名，出现平台信任警告属正常现象。[Desktop workflow](.github/workflows/desktop.yml) 会在对应的原生 runner 上构建全部四个目标并上传以供检查，不执行发布。
+`package:desktop` 会构建 Host 包、Web 前端、Electron 入口和当前平台的安装包。`package:desktop:dir` 执行相同构建，但生成未封装应用，以便更快地在本地检查。`electron-builder` 会将这两类产物写入 `apps/desktop/release/`；安装包在 macOS（arm64/x64）上为 DMG 和 ZIP，在 Linux x64 上为 AppImage 和 DEB，在 Windows x64 上为 NSIS EXE 和 MSI。产物未签名，出现平台信任警告属正常现象。[Desktop workflow](.github/workflows/desktop.yml) 会在对应的原生 runner 上构建全部四个目标并上传以供检查，不执行发布。
 
 ### 从源码运行
 

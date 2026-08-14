@@ -17,3 +17,4 @@ Every post-mortem opens with an **Executive summary**: one short paragraph a bus
 | [0003](0003-web-agent-gui-feedback-loop.md) | Web agent validated a replacement server instead of the GUI hosting its session |
 | [0004](0004-landlock-partial-notice-misclassified-child-failures.md) | Landlock partial-enforcement notice misclassified child failures |
 | [0005](0005-packaged-electron-ripgrep-asar-path.md) | Packaged Electron resolved ripgrep inside ASAR |
+| [0006](0006-macos-desktop-login-environment.md) | macOS GUI launch hid login-shell tools from Agent Bash |

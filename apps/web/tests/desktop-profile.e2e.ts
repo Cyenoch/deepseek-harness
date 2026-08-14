@@ -2,7 +2,7 @@
 // embedded Host to replace the local supervisor page, snapshot the assembled
 // client, hide the native window, then explicitly quit through the Host shutdown path.
 import { createRequire } from 'node:module'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -43,6 +43,7 @@ function waitForExit(application: ElectronApplication): Promise<number> {
 describe('web e2e: shipped Electron desktop carrier', () => {
   let home: string | undefined
   let workspace: string | undefined
+  let shellBin: string | undefined
   let application: ElectronApplication | undefined
   let page: Page
   let tripwire: { warnings: string[]; pageErrors: string[] }
@@ -63,6 +64,14 @@ describe('web e2e: shipped Electron desktop carrier', () => {
     env.LANG = 'en_US.UTF-8'
     env.LC_ALL = 'en_US.UTF-8'
     env.LANGUAGE = 'en'
+    if (process.platform === 'darwin') {
+      shellBin = join(home, 'login-shell-bin')
+      mkdirSync(shellBin)
+      writeFileSync(join(home, '.zprofile'), `export PATH="$PATH:${shellBin}"\nexport DESKTOP_SHELL_ENV_PROBE=ready\n`)
+      env.SHELL = '/bin/zsh'
+      env.ZDOTDIR = home
+      env.PATH = '/usr/bin:/bin:/usr/sbin:/sbin'
+    }
 
     application = await electron.launch({
       executablePath: desktopRequire('electron') as string,
@@ -88,11 +97,13 @@ describe('web e2e: shipped Electron desktop carrier', () => {
   it('keeps the embedded Host running after close and exits cleanly on explicit quit', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-electron-desktop'))
     if (application === undefined || workspace === undefined) throw new Error('Electron desktop was not started')
-    mkdirSync(SNAPSHOT_DIR, { recursive: true })
-    const snapshot = await captureStableAria(page, '#root', workspace)
-    await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
-    expect(tripwire.pageErrors).toEqual([])
     if (process.platform === 'darwin') {
+      const launchEnvironment = await application.evaluate(() => ({
+        path: process.env.PATH,
+        shellExport: process.env.DESKTOP_SHELL_ENV_PROBE,
+      }))
+      expect(launchEnvironment.path?.split(':')).toContain(shellBin)
+      expect(launchEnvironment.shellExport).toBe('ready')
       const layout = await application.evaluate(({ BrowserWindow }) => {
         const window = BrowserWindow.getAllWindows()[0]
         if (window === undefined) throw new Error('Electron desktop window is missing')
@@ -104,6 +115,10 @@ describe('web e2e: shipped Electron desktop carrier', () => {
       expect(layout.contentBounds).toEqual(layout.bounds)
       expect(await page.locator('html').getAttribute('data-dsh-window-chrome')).toBe('macos-hidden-inset')
     }
+    mkdirSync(SNAPSHOT_DIR, { recursive: true })
+    const snapshot = await captureStableAria(page, '#root', workspace)
+    await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
+    expect(tripwire.pageErrors).toEqual([])
 
     await application.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()[0]?.close()

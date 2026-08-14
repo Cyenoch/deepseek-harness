@@ -41,10 +41,10 @@ pnpm run dev:desktop
 Build unsigned native artifacts on the target operating system:
 
 ```sh
-pnpm --dir apps/desktop run build
+pnpm run package:desktop
 ```
 
-`electron-builder` writes DMG and ZIP on macOS (arm64/x64), AppImage and DEB on Linux x64, and NSIS EXE and MSI on Windows x64, under `apps/desktop/release/`. Artifacts are unsigned; platform trust warnings are expected. The [Desktop workflow](.github/workflows/desktop.yml) builds all four targets on native runners and uploads them for inspection without publishing.
+`package:desktop` builds the Host packages, Web frontend, Electron entries, and current-platform installers. `package:desktop:dir` performs the same build but writes an unpacked application for faster local inspection. `electron-builder` writes both forms under `apps/desktop/release/`; installers are DMG and ZIP on macOS (arm64/x64), AppImage and DEB on Linux x64, and NSIS EXE and MSI on Windows x64. Artifacts are unsigned; platform trust warnings are expected. The [Desktop workflow](.github/workflows/desktop.yml) builds all four targets on native runners and uploads them for inspection without publishing.
 
 ### Run from source
 

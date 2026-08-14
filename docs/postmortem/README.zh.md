@@ -17,3 +17,4 @@
 | [0003](0003-web-agent-gui-feedback-loop.md) | Web agent（智能体）验证了替代服务器，而非承载其会话的 GUI |
 | [0004](0004-landlock-partial-notice-misclassified-child-failures.md) | Landlock 部分强制执行通知导致子进程失败被误归类 |
 | [0005](0005-packaged-electron-ripgrep-asar-path.md) | 打包态 Electron 把 ripgrep 解析到了 ASAR 内 |
+| [0006](0006-macos-desktop-login-environment.md) | macOS GUI 启动使 Agent Bash 找不到登录 shell 工具 |
