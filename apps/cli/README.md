@@ -38,6 +38,8 @@ The tree composes over an empty root:
 
 Bundles named in `dsh.profile.bundles` resolve from the dsh installation first (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-headless`, `@deepseek-ai/dsh-desktop-app`), then from the profile's own `node_modules`, where pnpm installs out-of-tree plugins.
 
+Long-lived profiles keep the profile and home patch layers live through a config-only HMR watcher. The launcher supplies its profile-directory base as a `file:` URL, so Windows drive-letter paths remain filesystem locations rather than URL schemes.
+
 Use `--dump-default-config` and `--dump-config` to inspect the composed tree without booting it.
 
 The [CLI behavior reference](reference/README.md) owns exact layer precedence, flags, shutdown behavior, deployment defaults, and source execution.

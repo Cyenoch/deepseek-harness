@@ -38,6 +38,8 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 
 `dsh.profile.bundles` 中列出的组合包先从 dsh 安装目录解析（`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-headless`、`@deepseek-ai/dsh-desktop-app`），再从 profile 自身的 `node_modules` 解析；pnpm 会将树外插件安装到该目录。
 
+长驻 profile 通过仅监听配置的 HMR watcher 保持 profile 与 home patch 层实时生效。启动器以 `file:` URL 提供 profile 目录基准，使 Windows 盘符路径保持为文件系统位置，而不会被解释为 URL scheme。
+
 使用 `--dump-default-config` 和 `--dump-config` 可在不启动的情况下检查组合后的配置树。
 
 层的确切优先级、flag、关闭行为、部署默认值和源码执行方式，以 [CLI（命令行界面）行为参考](reference/README.md)为准。

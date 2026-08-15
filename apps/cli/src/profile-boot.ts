@@ -13,7 +13,7 @@
 
 import { writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -80,6 +80,17 @@ export const PROFILE_ROOT_FILENAME = 'cordis.yml'
 export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: boolean): PatchOptions | undefined {
   if ((disabledEnv ?? '') === '' || !hasRow) return undefined
   return { id: TELEMETRY_ROW_ID, disabled: true }
+}
+
+/**
+ * Encode a profile directory for HMR's URL-relative base configuration.
+ * Windows drive-letter paths must remain filesystem locations rather than
+ * being parsed as URL schemes.
+ * @param directory - Absolute profile directory.
+ * @returns a file URL accepted by the HMR plugin on every supported platform.
+ */
+export function profileWatchBaseUrl(directory: string): string {
+  return pathToFileURL(directory).href
 }
 
 /**
@@ -289,7 +300,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
         }
         await ctx.loader.create({
           name: '@deepseek-ai/cordis-plugin-hmr',
-          config: { root: [], base: composed.profile.dir },
+          config: { root: [], base: profileWatchBaseUrl(composed.profile.dir) },
         })
       }
       await watchUserPatches(ctx, {
