@@ -60,3 +60,50 @@ index 98733dc0cd752b554bd94e45904ca341ad141bba..fa234291206617ae5a6d8605abf97712
 
  const DEFAULT_FILE = 'sh';
  const DEFAULT_NAME = 'xterm';
+diff --git a/lib/windowsPtyAgent.js b/lib/windowsPtyAgent.js
+--- a/lib/windowsPtyAgent.js
++++ b/lib/windowsPtyAgent.js
+@@ -135,7 +135,7 @@ var WindowsPtyAgent = /** @class */ (function () {
+         // Tell the agent to kill the pty, this releases handles to the process
+         if (this._useConpty) {
+             if (!this._useConptyDll) {
+-                this._inSocket.readable = false;
++                this._inSocket.destroy();
+                 this._outSocket.readable = false;
+                 this._getConsoleProcessList().then(function (consoleProcessList) {
+                     consoleProcessList.forEach(function (pid) {
+@@ -240,9 +240,9 @@ var WindowsPtyAgent = /** @class */ (function () {
+         if (this._useConptyDll) {
+             return;
+         }
+-        this._inSocket.readable = false;
+-        this._outSocket.readable = false;
++        this._inSocket.destroy();
+         this._outSocket.destroy();
++        this._conoutSocketWorker.dispose();
+     };
+     return WindowsPtyAgent;
+ }());
+diff --git a/src/windowsPtyAgent.ts b/src/windowsPtyAgent.ts
+--- a/src/windowsPtyAgent.ts
++++ b/src/windowsPtyAgent.ts
+@@ -142,7 +142,7 @@ export class WindowsPtyAgent {
+     // Tell the agent to kill the pty, this releases handles to the process
+     if (this._useConpty) {
+       if (!this._useConptyDll) {
+-        this._inSocket.readable = false;
++        this._inSocket.destroy();
+         this._outSocket.readable = false;
+         this._getConsoleProcessList().then(consoleProcessList => {
+           consoleProcessList.forEach((pid: number) => {
+@@ -243,8 +243,8 @@ export class WindowsPtyAgent {
+     if (this._useConptyDll) {
+       return;
+     }
+-    this._inSocket.readable = false;
+-    this._outSocket.readable = false;
++    this._inSocket.destroy();
+     this._outSocket.destroy();
++    this._conoutSocketWorker.dispose();
+   }
+ }
