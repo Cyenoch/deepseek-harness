@@ -37,6 +37,20 @@ function progress(label) {
   process.stderr.write('[desktop-runtime-smoke] ' + label + '\n')
 }
 
+function activeRuntimeState() {
+  const handles = process._getActiveHandles().map(handle => {
+    const type = handle?.constructor?.name || typeof handle
+    if (type === 'ChildProcess') {
+      return { type, pid: handle.pid, connected: handle.connected, exitCode: handle.exitCode, killed: handle.killed }
+    }
+    if (type === 'Socket') {
+      return { type, fd: handle.fd, readable: handle.readable, writable: handle.writable }
+    }
+    return { type }
+  })
+  return { resources: process.getActiveResourcesInfo(), handles }
+}
+
 function smokeRipgrep() {
   const run = require('node:child_process').spawnSync(ripgrep, ['--version'], {
     encoding: 'utf8',
@@ -266,6 +280,10 @@ async function smokeAgentTools() {
   progress('node-pty completed')
   await smokeAgentTools()
   progress('Agent tools completed')
+  if (target === 'windows-x64') {
+    await new Promise(resolve => setTimeout(resolve, 1_000))
+    progress('active runtime state: ' + JSON.stringify(activeRuntimeState()))
+  }
   process.stdout.write(marker)
 })().catch(error => {
   process.stderr.write(error instanceof Error ? error.stack || error.message : String(error))
