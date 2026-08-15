@@ -18,3 +18,4 @@
 | [0004](0004-landlock-partial-notice-misclassified-child-failures.md) | Landlock 部分强制执行通知导致子进程失败被误归类 |
 | [0005](0005-packaged-electron-ripgrep-asar-path.md) | 打包态 Electron 把 ripgrep 解析到了 ASAR 内 |
 | [0006](0006-macos-desktop-login-environment.md) | macOS GUI 启动使 Agent Bash 找不到登录 shell 工具 |
+| [0007](0007-packaged-cordis-skills-asar-stats.md) | 打包后的 Cordis Agent 丢失 ASAR 内的 skill |

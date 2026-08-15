@@ -13,6 +13,7 @@ import { createServer } from 'node:net'
 import {
   applyLiteralEdit,
   listDirectory,
+  normalizeStatIdentity,
   probe,
   probeNoFollow,
   readForEdit,
@@ -105,6 +106,20 @@ describe('resolveLocalTarget', () => {
 })
 
 describe('probe', () => {
+  it('normalizes ordinary and bigint stat results', async () => {
+    const file = join(dir, 'metadata.txt')
+    await writeFile(file, 'metadata')
+
+    const ordinary = normalizeStatIdentity(await stat(file))
+    const bigint = normalizeStatIdentity(await stat(file, { bigint: true }))
+
+    expect(ordinary.size).toBe(8)
+    expect(bigint.size).toBe(8)
+    expect(ordinary.mode).toBe(bigint.mode)
+    expect(typeof ordinary.version).toBe('string')
+    expect(typeof bigint.version).toBe('string')
+  })
+
   it('returns null for a missing path and metadata for a file', async () => {
     expect(await probe(join(dir, 'nope'))).toBeNull()
     const file = join(dir, 'a.txt')

@@ -18,3 +18,4 @@ Every post-mortem opens with an **Executive summary**: one short paragraph a bus
 | [0004](0004-landlock-partial-notice-misclassified-child-failures.md) | Landlock partial-enforcement notice misclassified child failures |
 | [0005](0005-packaged-electron-ripgrep-asar-path.md) | Packaged Electron resolved ripgrep inside ASAR |
 | [0006](0006-macos-desktop-login-environment.md) | macOS GUI launch hid login-shell tools from Agent Bash |
+| [0007](0007-packaged-cordis-skills-asar-stats.md) | Packaged Cordis Agent dropped ASAR-hosted skills |

@@ -70,9 +70,35 @@ async function readFileAbortable(absolutePath: string, verb: 'read' | 'edit', si
   }
 }
 
-/** Opaque version token from high-resolution identity and freshness metadata. */
-function versionOf(info: BigIntStats): FsVersion {
-  return FsVersion(`${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`)
+/**
+ * Normalize filesystem identity metadata across Node's ordinary and bigint
+ * stat results. Electron's ASAR implementation returns ordinary `Stats` even
+ * when the bigint overload is requested, so the actual field types decide
+ * which timestamp representation is available.
+ * @param info - metadata returned by a Node-compatible filesystem.
+ * @returns the stable version token, permission bits, and byte size.
+ */
+export function normalizeStatIdentity(
+  info: Stats | BigIntStats,
+): Pick<PathInfo, 'version' | 'mode' | 'size'> {
+  if (typeof info.mode === 'bigint') {
+    const bigintInfo = info as BigIntStats
+    return {
+      version: FsVersion(
+        `${bigintInfo.dev}:${bigintInfo.ino}:${bigintInfo.size}:${bigintInfo.mtimeNs}:${bigintInfo.ctimeNs}`,
+      ),
+      mode: Number(bigintInfo.mode & 0o777n),
+      size: Number(bigintInfo.size),
+    }
+  }
+  const numericInfo = info as Stats
+  return {
+    version: FsVersion(
+      `${numericInfo.dev}:${numericInfo.ino}:${numericInfo.size}:${numericInfo.mtimeMs}:${numericInfo.ctimeMs}`,
+    ),
+    mode: numericInfo.mode & 0o777,
+    size: numericInfo.size,
+  }
 }
 
 /**
@@ -231,10 +257,8 @@ export async function probe(absolutePath: string): Promise<PathInfo | null> {
   const info = await probeStats(absolutePath, path => stat(path, { bigint: true }))
   if (!info) return null
   return {
-    version: versionOf(info),
-    mode: Number(info.mode & 0o777n),
+    ...normalizeStatIdentity(info),
     type: pathType(info),
-    size: Number(info.size),
   }
 }
 
@@ -247,10 +271,8 @@ export async function probeNoFollow(absolutePath: string): Promise<PathLinkInfo 
   const info = await probeStats(absolutePath, path => lstat(path, { bigint: true }))
   if (!info) return null
   return {
-    version: versionOf(info),
-    mode: Number(info.mode & 0o777n),
+    ...normalizeStatIdentity(info),
     type: pathLinkType(info),
-    size: Number(info.size),
   }
 }
 

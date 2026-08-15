@@ -272,11 +272,19 @@ describe('the shipped Web composition', () => {
       expect(tools).toEqual(expect.arrayContaining(['bash', 'read', 'edit', 'skill']))
       expect(tools).not.toContain('str_replace_editor')
 
-      // The preset's own authoring skill registers into ITS layer of the host
-      // registry: the cordis agent's view carries it, the global view does not.
+      // The preset's authoring skills register into ITS layer of the host
+      // registry: the cordis agent's view carries them, the global view does not.
       const scoped = (await ctx.skills.list({ scope: handle.agent })).map(skill => skill.name)
-      expect(scoped).toContain('editing-cordis-compositions')
-      expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain('editing-cordis-compositions')
+      expect(scoped).toEqual(expect.arrayContaining([
+        'cordis-plugin-development',
+        'editing-cordis-compositions',
+      ]))
+      expect((await ctx.skills.get('cordis-plugin-development', { scope: handle.agent }))?.content)
+        .toContain('# Develop Dynamic Cordis Plugins')
+      expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(expect.not.arrayContaining([
+        'cordis-plugin-development',
+        'editing-cordis-compositions',
+      ]))
     } finally {
       await handle.dispose()
     }

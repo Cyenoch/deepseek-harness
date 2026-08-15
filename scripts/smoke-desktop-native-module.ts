@@ -93,6 +93,7 @@ async function smokeAgentTools() {
 
   let host
   let handle
+  let cordisHandle
   let call = 0
   try {
     host = await runProfile({
@@ -121,13 +122,14 @@ async function smokeAgentTools() {
     const names = ctx.tools.schemas(agent).map(schema => schema.name).sort()
     assert(JSON.stringify(names) === JSON.stringify(expected), 'unexpected Agent tool catalog: ' + JSON.stringify(names))
 
-    const execute = (name, arguments) => ctx.agents.withInitiator(agent, () => ctx.tools.execute({
+    const executeFor = (actingAgent, name, arguments) => ctx.agents.withInitiator(actingAgent, () => ctx.tools.execute({
       signal: new AbortController().signal,
       callId: CallId('packaged-tool-' + String(++call)),
       name,
       arguments,
-      agent,
+      agent: actingAgent,
     }))
+    const execute = (name, arguments) => executeFor(agent, name, arguments)
 
     const file = join(workspace, 'tool-smoke.txt')
     assertFailure(await execute('read', { file_path: file }), 'read missing file')
@@ -167,6 +169,29 @@ async function smokeAgentTools() {
 
     const skill = assertSuccess(await execute('skill', { name: 'packaged-smoke' }), 'skill')
     assert(skill.content.includes('packaged-skill-ok'), 'skill returned the wrong content')
+
+    cordisHandle = await ctx.agents.create({
+      sessionId: SessionId('packaged-cordis-skill-smoke'),
+      meta: { cwd: workspace },
+      agentOptions: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'cordis').then(() => undefined),
+    })
+    const cordisAgent = cordisHandle.agent
+    const cordisSkills = (await ctx.skills.list({ cwd: workspace, scope: cordisAgent })).map(skill => skill.name)
+    assert(
+      cordisSkills.includes('cordis-plugin-development'),
+      'Cordis Agent omitted cordis-plugin-development: ' + JSON.stringify(cordisSkills),
+    )
+    assert(
+      cordisSkills.includes('editing-cordis-compositions'),
+      'Cordis Agent omitted editing-cordis-compositions: ' + JSON.stringify(cordisSkills),
+    )
+    const cordisSkill = assertSuccess(
+      await executeFor(cordisAgent, 'skill', { name: 'cordis-plugin-development' }),
+      'Cordis Agent skill',
+    )
+    assert(cordisSkill.content.includes('# Develop Dynamic Cordis Plugins'), 'Cordis Agent skill returned the wrong content')
+
     assertSuccess(await execute('todo_write', {
       todos: [{ content: 'Exercise packaged tools', status: 'completed' }],
     }), 'todo_write')
@@ -201,6 +226,7 @@ async function smokeAgentTools() {
     assertFailure(await execute('send_message', { subagent_id: 'missing-child', message: 'probe' }), 'send_message')
     assertSuccess(await execute('interrupt_agent', { agent_id: 'missing-child' }), 'interrupt_agent')
   } finally {
+    if (cordisHandle !== undefined) await cordisHandle.dispose()
     if (handle !== undefined) await handle.dispose()
     if (host !== undefined) await host.shutdown.shutdown(0)
     rmSync(home, { recursive: true, force: true })

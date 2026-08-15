@@ -16,7 +16,7 @@ await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
 
 - **`resolve(path, opts?)`**：相对 `path` 在调用方提供 `opts.cwd` 时以该值为基准解析（面向模型的工具会传入调用 agent（智能体）的会话 cwd；见[每会话 cwd Agent Note](../../../.agents/notes/implemented/architecture/2026-07-02-fs-per-session-cwd.md)），否则以 `config.cwd` 为基准（默认 `process.cwd()`）；绝对 `path` 会忽略两者。`opts.signal` 会在本地解析前后检查，远程同级后端则可以用它中止往返。`targetKey` 是文件的 `realpath`，因此经符号链接到达同一文件的两个输入路径会共享一个身份，写入/编辑落在链接目标上，同时保留链接。尚不存在的路径在父目录存在时使用 realpath 后的父目录加 basename；只有父目录无法解析时才回退到绝对路径。`displayPath` 是绝对但未经解析的路径。
 - **执行世界坐标**：`processPath` 公开目标的规范化宿主路径，`fileUrl` 通过 Node 的平台感知 URL 转换对该路径编码，`contains` 则使用平台路径语义检查身份相等或后代包含关系，消费方无需解析 `targetKey`。
-- **`stat` / `lstat`**：返回目标元数据；目标不存在时返回 `undefined`。`stat` 为已解析目标报告 `FsInfo`（`version` 是由 bigint `dev:ino:size:mtimeNs:ctimeNs` 派生的不透明 token，`type` 为 `file`/`directory`/`other`，`size` 以字节计）；路径形态的 `lstat` 不跟随最后一个符号链接，报告 `FsPathInfo`，因此可以返回 `symlink`。两者都会在异步元数据探测前后检查取消，因此异步探测进行期间发生的中止会报告 `FS_ABORTED`，而非陈旧的不存在结果。
+- **`stat` / `lstat`**：返回目标元数据；目标不存在时返回 `undefined`。`stat` 为已解析目标报告 `FsInfo`（`version` 是由设备、inode、大小、修改时间与变更时间派生的不透明 token，`type` 为 `file`/`directory`/`other`，`size` 以字节计）；路径形态的 `lstat` 不跟随最后一个符号链接，报告 `FsPathInfo`，因此可以返回 `symlink`。原生 Node 元数据使用纳秒时间戳；如果一个 Node 兼容的虚拟文件系统在请求 bigint overload 时仍返回普通数值型 `Stats`（包括 Electron ASAR），则改用毫秒时间戳。两项操作都会在异步元数据探测前后检查取消，因此异步探测进行期间发生的中止会报告 `FS_ABORTED`，而非陈旧的不存在结果。
 - **`readText` / `streamText`**：只支持 UTF-8。`readText` 读取整个文件；`streamText` 按分片解码，因此超大文件无需整体保存在内存中，消费方也可以自行限制保留量。两者都会拒绝无效 UTF-8、包含 NUL 字节的二进制样本（`FS_NOT_TEXT`）以及非普通文件目标。`read` 工具（`@deepseek-ai/dsh-tool-fs`）拥有行窗口逻辑。
 - **`readBytes`**：按原始字节读取整个文件，不做解码或二进制拒绝（`read_image` 工具通过附件服务校验内容）。必填的字节上限在任何内容 I/O 之前先按 stat 大小短路；随后的流最多多读一个字节，因此 stat 之后增长的文件仍会以 `FS_TOO_LARGE` 失败，不会无界缓冲。
 - **`listDir`**：按稳定的 `name.localeCompare()` 顺序列出一层目录。每个条目携带子项 basename、类型、解析后的子目标（`displayPath` 位于所列目录下，`targetKey` 是 realpath 身份）和低成本 stat 元数据（`version`，普通文件另有 `size`）。它绝不会打开或解码文件内容。缺失目标报告 `FS_NOT_FOUND`，文件/特殊文件目标报告 `FS_NOT_DIRECTORY`，已中止调用报告 `FS_ABORTED`，权限失败报告 `FS_PERMISSION_DENIED`，其他列出或子项元数据 I/O 失败报告 `FS_IO_ERROR`。损坏/消失的子项以无元数据的 `other` 返回，但解析子项时出现权限/I/O 失败会让整个列表以结构化 `FsError` 失败。
@@ -36,7 +36,7 @@ await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
 ## 已知限制与延期工作
 
 - **`config.cwd` 不是沙箱**：它是解析默认值，而非约束；绝对路径和 `..` 可以逃逸。请使用更严格的 `ctx.fs` 后端或 `tools/execute` waterfall（瀑布式事件）上的权限插件实施约束（见[能力 seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-17-filesystem-capability-seam.md#consequences)）。
-- **版本 token 依赖文件系统元数据**：它们组合设备、inode、大小、纳秒级 mtime 和纳秒级 ctime；如果存储层在重写时无法更新其中任何一项事实，仍可能绕过陈旧防护。
+- **版本 token 依赖文件系统元数据**：它们按后端文件系统能够提供的精度组合设备、inode、大小、mtime 与 ctime；如果存储层在重写时无法更新其中任何一项事实，仍可能绕过陈旧防护。
 - **`editText` 会把整个文件及编辑后的副本保存在内存中**：只有读取路径支持流式处理。
 - **低于上限的覆写仍会缓冲上下文基础**：`writeText` 除调用方持有的替换内容外，最多还会保留略低于 `config.diffBasisMaxBytes` 的旧文本；该上限不限制返回的 `after` 值，也不限制展示层的整文件回退。
 - **二进制检测不对称**：读取只对前 8192 字节执行 NUL 采样，编辑则扫描整个 buffer，因此 NUL 出现在后部的文件可以读取，但编辑会被拒绝。
