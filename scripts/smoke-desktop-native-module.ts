@@ -33,6 +33,10 @@ function assertFailure(result, label, expected) {
   }
 }
 
+function progress(label) {
+  process.stderr.write('[desktop-runtime-smoke] ' + label + '\n')
+}
+
 function smokeRipgrep() {
   const run = require('node:child_process').spawnSync(ripgrep, ['--version'], {
     encoding: 'utf8',
@@ -96,6 +100,7 @@ async function smokeAgentTools() {
   let cordisHandle
   let call = 0
   try {
+    progress('profile boot started')
     host = await runProfile({
       environment: loadLayeredEnv('dsh'),
       profile: 'desktop',
@@ -103,6 +108,7 @@ async function smokeAgentTools() {
       args: [],
       prepare: async ctx => { await ctx.plugin(StubDirectoryPicker) },
     })
+    progress('profile boot completed')
     const ctx = host.ctx
     handle = await ctx.agents.create({
       sessionId: SessionId('packaged-agent-tool-smoke'),
@@ -110,6 +116,7 @@ async function smokeAgentTools() {
       agentOptions: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
     })
+    progress('standard Agent mounted')
     const agent = handle.agent
     const shellTool = target === 'windows-x64' ? 'pwsh' : 'bash'
     const expected = [
@@ -141,6 +148,7 @@ async function smokeAgentTools() {
     assert(glob.paths.some(path => path.endsWith('tool-smoke.txt')), 'glob omitted the smoke file')
     const grep = assertSuccess(await execute('grep', { pattern: 'needle', path: workspace }), 'grep')
     assert(grep.matches.some(match => match.path.endsWith('tool-smoke.txt')), 'grep omitted the smoke match')
+    progress('filesystem tools completed')
 
     const foregroundCommand = target === 'windows-x64'
       ? 'Write-Output packaged-shell-ok'
@@ -151,6 +159,7 @@ async function smokeAgentTools() {
       workdir: workspace,
     }), shellTool)
     assert(foreground.kind === 'foreground' && foreground.stdout.text.includes('packaged-shell-ok'), shellTool + ' returned the wrong output')
+    progress('foreground shell completed')
 
     const background = assertSuccess(await execute(shellTool, {
       command: foregroundCommand,
@@ -166,9 +175,11 @@ async function smokeAgentTools() {
     assert(backgroundOutput.text.includes('packaged-shell-ok'), 'job_output omitted background output')
     assertSuccess(await execute('job_list', {}), 'job_list')
     assertSuccess(await execute('job_kill', { job_id: background.jobId, reason: 'packaged smoke complete' }), 'job_kill')
+    progress('background shell completed')
 
     const skill = assertSuccess(await execute('skill', { name: 'packaged-smoke' }), 'skill')
     assert(skill.content.includes('packaged-skill-ok'), 'skill returned the wrong content')
+    progress('workspace skill completed')
 
     cordisHandle = await ctx.agents.create({
       sessionId: SessionId('packaged-cordis-skill-smoke'),
@@ -191,6 +202,7 @@ async function smokeAgentTools() {
       'Cordis Agent skill',
     )
     assert(cordisSkill.content.includes('# Develop Dynamic Cordis Plugins'), 'Cordis Agent skill returned the wrong content')
+    progress('Cordis skill completed')
 
     assertSuccess(await execute('todo_write', {
       todos: [{ content: 'Exercise packaged tools', status: 'completed' }],
@@ -201,11 +213,13 @@ async function smokeAgentTools() {
       meta: { name: 'packaged-smoke', description: 'Exercise the packaged workflow worker' },
     }), 'workflow')
     assert(workflow.result.ok === true && workflow.agentsStarted === 0, 'workflow returned the wrong result')
+    progress('workflow completed')
     const code = await ctx.codeRuntime.run({
       program: 'const value: number = 42; return value',
       bindings: [],
     })
     assert(code.error === undefined && code.value === 42, 'packaged code worker returned the wrong result: ' + JSON.stringify(code))
+    progress('code runtime completed')
 
     if (target === 'windows-x64') {
       const { pickNativeDirectory } = await load('@deepseek-ai/dsh-host-directory-picker-native')
@@ -219,16 +233,27 @@ async function smokeAgentTools() {
       } finally {
         clearTimeout(abort)
       }
+      progress('native directory picker completed')
     }
 
     assertFailure(await execute('exit_plan_mode', { plan: '# Smoke' }), 'exit_plan_mode', 'only available in plan mode')
     assertFailure(await execute('read_image', { file_path: join(workspace, 'probe.png') }), 'read_image', 'does not declare image input')
     assertFailure(await execute('send_message', { subagent_id: 'missing-child', message: 'probe' }), 'send_message')
     assertSuccess(await execute('interrupt_agent', { agent_id: 'missing-child' }), 'interrupt_agent')
+    progress('negative-path tools completed')
   } finally {
-    if (cordisHandle !== undefined) await cordisHandle.dispose()
-    if (handle !== undefined) await handle.dispose()
-    if (host !== undefined) await host.shutdown.shutdown(0)
+    if (cordisHandle !== undefined) {
+      await cordisHandle.dispose()
+      progress('Cordis Agent disposed')
+    }
+    if (handle !== undefined) {
+      await handle.dispose()
+      progress('standard Agent disposed')
+    }
+    if (host !== undefined) {
+      await host.shutdown.shutdown(0)
+      progress('profile shutdown completed')
+    }
     rmSync(home, { recursive: true, force: true })
     rmSync(workspace, { recursive: true, force: true })
   }
@@ -236,8 +261,11 @@ async function smokeAgentTools() {
 
 ;(async () => {
   smokeRipgrep()
+  progress('ripgrep completed')
   await smokePty()
+  progress('node-pty completed')
   await smokeAgentTools()
+  progress('Agent tools completed')
   process.stdout.write(marker)
 })().catch(error => {
   process.stderr.write(error instanceof Error ? error.stack || error.message : String(error))
@@ -319,7 +347,12 @@ function main(): void {
     timeout: 60_000,
     windowsHide: true,
   })
-  if (result.error !== undefined) throw result.error
+  if (result.error !== undefined) {
+    throw new Error(
+      `desktop native smoke process failed: ${String(result.error)}\n${result.stderr || result.stdout}`,
+      { cause: result.error },
+    )
+  }
   if (result.status !== 0 || !result.stdout.includes(MARKER)) {
     throw new Error(`desktop native smoke failed with status ${String(result.status)}: ${result.stderr || result.stdout}`)
   }
