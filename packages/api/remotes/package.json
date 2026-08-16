@@ -73,6 +73,7 @@
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-session-persistence": "workspace:^",
     "@deepseek-ai/dsh-settings": "workspace:^",
+    "@deepseek-ai/dsh-terminal": "workspace:^",
     "@deepseek-ai/dsh-typert-registry": "workspace:^"
   },
   "devDependencies": {
@@ -90,6 +91,7 @@
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-session-persistence": "workspace:^",
     "@deepseek-ai/dsh-settings": "workspace:^",
+    "@deepseek-ai/dsh-terminal": "workspace:^",
     "@deepseek-ai/dsh-typert-registry": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }

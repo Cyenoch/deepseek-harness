@@ -291,6 +291,7 @@ describe('LocalSubprocessRuntime', () => {
 
   it('releases a terminal after top-level exit reaches quiescence', async () => {
     let exitListener: ((event: { exitCode: number; signal?: number }) => void) | undefined
+    let ptyName: string | undefined
     const inspector = {
       foregroundPgid: () => undefined,
       isStdinWaiting: () => false,
@@ -311,7 +312,12 @@ describe('LocalSubprocessRuntime', () => {
       kill: () => {},
     }
     vi.resetModules()
-    vi.doMock('node-pty', () => ({ spawn: () => terminal }))
+    vi.doMock('node-pty', () => ({
+      spawn: (_file: string, _args: string[], options: { name: string }) => {
+        ptyName = options.name
+        return terminal
+      },
+    }))
     vi.doMock('../src/process-inspector.ts', async importOriginal => ({
       ...await importOriginal<typeof import('../src/process-inspector.ts')>(),
       createProcessInspector: () => inspector,
@@ -322,8 +328,9 @@ describe('LocalSubprocessRuntime', () => {
       const fiber = await ctx.plugin(IsolatedLocalSubprocessRuntime)
       const service = ctx.subprocess as InstanceType<typeof IsolatedLocalSubprocessRuntime>
       const handle = await ctx.subprocess.spawnTerminal({
-        argv: ['shell'], cwd: process.cwd(), rows: 24, cols: 80, graceMs: 1,
+        argv: ['shell'], cwd: process.cwd(), env: { TERM: 'xterm-256color' }, rows: 24, cols: 80, graceMs: 1,
       })
+      expect(ptyName).toBe('xterm-256color')
       expect((service as unknown as { terminals: Set<SubprocessTerminalHandle> }).terminals.size).toBe(1)
       exitListener?.({ exitCode: 0 })
       await handle.done

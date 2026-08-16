@@ -1,0 +1,5 @@
+- region "Launchpad":
+  - button "Session log Download a ZIP archive of this session, its sub-sessions, and attachments"
+  - button "Side chat Ask a one-shot side question about this session without disturbing it"
+  - button "Terminal Interactive shell rendered by libghostty-vt WASM"
+  - button "Trajectory Browse the session’s per-turn calls, durations, and usage"

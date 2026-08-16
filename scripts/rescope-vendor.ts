@@ -104,6 +104,35 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   // GROUP_ORDER holds `packages/<group>/` directory names, not package names.
   { file: 'scripts/gen-module-graph.ts', upstream: ['cordis'] },
   { file: 'scripts/gen-doc-graphs.ts', upstream: ['cordis'] },
+  // These files quote the product's `cordis/*` event namespace, Cordis plugin
+  // ids, tool names, locale namespace, or preset id. None is an npm specifier.
+  { file: 'docs/event-producer-consumer.md', upstream: ['cordis'] },
+  { file: 'docs/event-producer-consumer.zh.md', upstream: ['cordis'] },
+  { file: 'docs/subsystems/extensions.md', upstream: ['cordis'] },
+  { file: 'docs/subsystems/extensions.zh.md', upstream: ['cordis'] },
+  { file: 'packages/api/remotes/src/remote-events.ts', upstream: ['cordis'] },
+  { file: 'packages/client/ui-settings-plugin-inventory/src/client/PluginInventorySettingsTab.tsx', upstream: ['cordis'] },
+  { file: 'packages/extensions/cordis-client-runner/src/client/index.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/cordis-client-runner/src/client/runtime.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/cordis-client-runner/tests/orchestrator.client.spec.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/cordis-client-runner/tests/plugin.client.spec.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/cordis-host-runner/src/index.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/cordis-host-runner/src/inspect-registry.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/cordis-host-runner/src/types.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/cordis-host-runner/tests/helpers.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/cordis-host-runner/tests/runner.spec.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/cordis-host-runner/tests/versioning.spec.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/tool-cordis/src/api-catalog.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/tool-cordis/src/providers.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/ui-cordis/src/client/CordisActionRow.tsx', upstream: ['cordis'] },
+  { file: 'packages/extensions/ui-cordis/src/client/CordisDefineRow.tsx', upstream: ['cordis'] },
+  { file: 'packages/extensions/ui-cordis/src/client/CordisPanel.tsx', upstream: ['cordis'] },
+  { file: 'packages/extensions/ui-cordis/src/client/CordisRunRow.tsx', upstream: ['cordis'] },
+  { file: 'packages/extensions/ui-cordis/src/client/index.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/ui-cordis/src/client/inventory.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/ui-cordis/src/client/locales.ts', upstream: ['cordis'] },
+  { file: 'scripts/gen-cordis-catalog.ts', upstream: ['cordis'] },
+  { file: 'scripts/smoke-desktop-native-module.ts', upstream: ['cordis'] },
 ]
 
 /** A string that must appear exactly `count` times once the rescope has run. */
@@ -599,7 +628,7 @@ function main(): void {
   const all = patterns(reverse)
   const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
     .split('\0')
-    .filter(file => file !== '' && !excluded(file))
+    .filter(file => file !== '' && existsSync(resolve(root, file)) && !excluded(file))
 
   const counts = new Map<string, { files: number; lines: number }>()
   const failures: string[] = []

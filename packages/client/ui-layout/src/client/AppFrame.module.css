@@ -64,6 +64,18 @@
   border-left: none;
 }
 
+/* The side panel column: same mounted-at-zero contract as details. */
+.sidepanelCol {
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+}
+
+.frame[data-sidepanel-collapsed] .sidepanelCol {
+  border-left: none;
+}
+
 /* Drag handles are frame children (columns clip overflow): an 8px hit strip
    centered on the column border via inline left, above column content. Details
    adds a visible 12x32 pill at vertical center; sidebar keeps only the hit strip. */
@@ -91,7 +103,8 @@
   }
 }
 
-.handle[data-side='details']::after {
+.handle[data-side='details']::after,
+.handle[data-side='sidepanel']::after {
   content: '';
   position: absolute;
   top: 50%;
@@ -103,8 +116,8 @@
   box-sizing: border-box;
   background: var(--dsw-alias-button-floating-fill);
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
-  /* Hover affordance: the details pill hides until the pointer is over its
-     column, the strip itself, or a drag. */
+  /* Hover affordance: the pill hides until the pointer is over its column,
+     the strip itself, or a drag. */
   opacity: 0;
   transition:
     opacity var(--ds-transition-duration-slow) var(--ds-ease-in-out),
@@ -113,12 +126,17 @@
 
 .detailsCol:hover ~ .handle[data-side='details']::after,
 .handle[data-side='details']:hover::after,
-.handle[data-side='details'][data-dragging='true']::after {
+.handle[data-side='details'][data-dragging='true']::after,
+.sidepanelCol:hover ~ .handle[data-side='sidepanel']::after,
+.handle[data-side='sidepanel']:hover::after,
+.handle[data-side='sidepanel'][data-dragging='true']::after {
   opacity: 1;
 }
 
 .handle[data-side='details']:hover::after,
-.handle[data-side='details'][data-dragging='true']::after {
+.handle[data-side='details'][data-dragging='true']::after,
+.handle[data-side='sidepanel']:hover::after,
+.handle[data-side='sidepanel'][data-dragging='true']::after {
   background: var(--dsw-alias-button-floating-hover);
   border-color: var(--dsw-alias-border-l3);
 }

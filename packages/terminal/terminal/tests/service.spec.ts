@@ -7,6 +7,8 @@ import TerminalSessionService, { TerminalBackendCleanupError, TerminalError, Ter
 import type {
   TerminalBackend,
   TerminalBackendSession,
+  TerminalBackendSpawnSpec,
+  TerminalInteractiveSession,
   TerminalReadRequest,
   TerminalSendOperation,
   TerminalSendRequest,
@@ -55,7 +57,24 @@ class StubSession implements TerminalBackendSession {
   operation: TerminalSendOperation | undefined
   rejectSend = false
   rejectClose = false
+  rejectResize = false
   closeGate: PromiseWithResolvers<undefined> | undefined
+  readonly interactive?: TerminalInteractiveSession
+  readonly interactiveWrites: string[] = []
+  readonly interactiveSizes: Array<[number, number]> = []
+
+  constructor(interactive = false) {
+    if (!interactive) return
+    this.interactive = {
+      write: async (data) => { this.interactiveWrites.push(data) },
+      read: async cursor => ({ data: 'raw', cursor: cursor + 3, truncated: false }),
+      resize: async (cols, rows) => {
+        if (this.rejectResize) throw new Error('resize failed')
+        this.interactiveSizes.push([cols, rows])
+        return true
+      },
+    }
+  }
 
   startSend(_request: TerminalSendRequest): TerminalSendOperation {
     if (this.rejectSend) {
@@ -104,17 +123,20 @@ class StubSession implements TerminalBackendSession {
   }
 }
 
-function backend(type = 'stub') {
+function backend(type = 'stub', interactive = false) {
   const sessions: StubSession[] = []
+  const specs: TerminalBackendSpawnSpec[] = []
   const provider: TerminalBackend = {
     type,
-    async spawn() {
-      const session = new StubSession()
+    ...interactive ? { supportsInteractive: true } : {},
+    async spawn(spec) {
+      specs.push(spec)
+      const session = new StubSession(interactive)
       sessions.push(session)
       return session
     },
   }
-  return { provider, sessions }
+  return { provider, sessions, specs }
 }
 
 async function harness() {
@@ -149,6 +171,115 @@ describe('TerminalSessionService backend registry', () => {
   it('rejects empty backend types', async () => {
     const ctx = await harness()
     expect(() => ctx.terminals.registerBackend(backend('').provider)).toThrow('must be non-empty')
+  })
+})
+
+describe('TerminalSessionService human attachment', () => {
+  it('attaches and resumes one named interactive PTY with raw I/O and dimensions', async () => {
+    const ctx = await harness()
+    const plain = backend('plain')
+    const interactive = backend('shell', true)
+    ctx.terminals.registerBackend(plain.provider)
+    ctx.terminals.registerBackend(interactive.provider)
+    const owner = stubAgent(ctx, 'owner')
+    const foreign = stubAgent(ctx, 'foreign')
+    ctx.agents.register(owner)
+    ctx.agents.register(foreign)
+
+    expect(ctx.terminals.interactiveBackends(owner)).toEqual(['shell'])
+    const controller = new AbortController()
+    const created = await ctx.terminals.attach(owner, {
+      backendType: 'shell',
+      name: 'sidepanel',
+      cwd: '/workspace',
+      cols: 80,
+      rows: 24,
+    }, controller.signal)
+    expect(created).toEqual({
+      sessionId: 'pty-1',
+      backendType: 'shell',
+      resumed: false,
+      resizeSupported: true,
+    })
+    expect(interactive.specs[0]?.owner).toBe(owner)
+    expect(interactive.specs[0]).toMatchObject({
+      type: 'shell',
+      name: 'sidepanel',
+      cwd: '/workspace',
+      presentation: 'human',
+    })
+    expect(interactive.sessions[0]?.interactiveSizes).toEqual([[80, 24]])
+
+    await ctx.terminals.writeInput(owner, created.sessionId, 'pwd\r')
+    expect(interactive.sessions[0]?.interactiveWrites).toEqual(['pwd\r'])
+    expect(await ctx.terminals.readStream(owner, created.sessionId, 0, controller.signal)).toEqual({
+      data: 'raw',
+      cursor: 3,
+      truncated: false,
+      status: 'running',
+    })
+    await expect(ctx.terminals.resize(owner, created.sessionId, 120, 40)).resolves.toEqual({ supported: true })
+    await expect(ctx.terminals.readStream(foreign, created.sessionId, 0, controller.signal)).rejects.toThrow('belongs to another agent')
+
+    await expect(ctx.terminals.attach(owner, {
+      backendType: 'shell',
+      name: 'sidepanel',
+      cols: 100,
+      rows: 30,
+    }, controller.signal)).resolves.toMatchObject({ sessionId: created.sessionId, resumed: true })
+    expect(interactive.sessions).toHaveLength(1)
+    await expect(ctx.terminals.closeAttached(owner, created.sessionId)).resolves.toBe(true)
+    expect(ctx.terminals.list(owner)).toEqual([])
+  })
+
+  it('rejects unsupported backends and invalid browser inputs before allocating', async () => {
+    const ctx = await harness()
+    const plain = backend('plain')
+    ctx.terminals.registerBackend(plain.provider)
+    const owner = stubAgent(ctx, 'owner')
+    ctx.agents.register(owner)
+    const signal = new AbortController().signal
+
+    await expect(ctx.terminals.attach(owner, {
+      backendType: 'plain',
+      name: 'sidepanel',
+      cols: 80,
+      rows: 24,
+    }, signal)).rejects.toMatchObject({ code: 'INTERACTIVE_UNSUPPORTED' })
+    await expect(ctx.terminals.attach(owner, {
+      backendType: 'plain',
+      name: 'sidepanel',
+      cols: 0,
+      rows: 24,
+    }, signal)).rejects.toThrow('columns must be a positive safe integer')
+    await expect(ctx.terminals.writeInput(owner, TerminalSessionId('missing'), 'x'.repeat(64 * 1024 + 1))).rejects.toThrow('64 KiB')
+    expect(plain.sessions).toEqual([])
+  })
+
+  it.each([
+    { cleanup: 'succeeds', rejectClose: false, expected: Error },
+    { cleanup: 'fails', rejectClose: true, expected: AggregateError },
+  ])('rolls back a newly attached PTY when its initial resize fails and cleanup $cleanup', async ({ rejectClose, expected }) => {
+    const ctx = await harness()
+    const session = new StubSession(true)
+    session.rejectResize = true
+    session.rejectClose = rejectClose
+    ctx.terminals.registerBackend({
+      type: 'shell',
+      supportsInteractive: true,
+      spawn: async () => session,
+    })
+    const owner = stubAgent(ctx, 'owner')
+    ctx.agents.register(owner)
+
+    await expect(ctx.terminals.attach(owner, {
+      backendType: 'shell',
+      name: 'sidepanel',
+      cols: 80,
+      rows: 24,
+    }, new AbortController().signal)).rejects.toBeInstanceOf(expected)
+    expect(session.closed).toEqual(['interactive terminal attachment failed'])
+    expect(ctx.terminals.list(owner)).toHaveLength(rejectClose ? 1 : 0)
   })
 })
 

@@ -49,6 +49,9 @@
       "path": "../../settings/settings"
     },
     {
+      "path": "../../terminal/terminal"
+    },
+    {
       "path": "../../typert/protocol"
     }
   ]

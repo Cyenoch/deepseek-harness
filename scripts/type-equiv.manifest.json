@@ -972,6 +972,36 @@
     },
     {
       "doc": "docs/subsystems/terminal.md",
+      "symbol": "TerminalInteractiveSession",
+      "source": "packages/terminal/terminal/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/terminal.md",
+      "symbol": "TerminalSessionIdValue",
+      "source": "packages/terminal/terminal/src/remote-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/terminal.md",
+      "symbol": "TerminalAttachRequest",
+      "source": "packages/terminal/terminal/src/remote-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/terminal.md",
+      "symbol": "TerminalAttachResult",
+      "source": "packages/terminal/terminal/src/remote-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/terminal.md",
+      "symbol": "TerminalStreamReadResult",
+      "source": "packages/terminal/terminal/src/remote-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/terminal.md",
+      "symbol": "TerminalResizeResult",
+      "source": "packages/terminal/terminal/src/remote-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/terminal.md",
       "symbol": "TerminalSendOperation",
       "source": "packages/terminal/terminal/src/types.ts"
     },

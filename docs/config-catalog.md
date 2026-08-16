@@ -469,6 +469,25 @@ export interface Config {
 
 Source: [`packages/code-runtime/code-runtime-worker-thread/src/index.ts:25`](../packages/code-runtime/code-runtime-worker-thread/src/index.ts)
 
+<a id="deepseek-aidsh-command-btw"></a>
+
+## `@deepseek-ai/dsh-command-btw`
+
+Requires: `commands`
+
+```ts config-catalog
+/** Config: the deployment-owned advisor framing injected into every side child. */
+export interface Config {
+  /**
+   * Model-facing framing text injected as one plugin-sourced context message at
+   * the head of every side child's own history. Must be non-empty.
+   */
+  advisor: string
+}
+```
+
+Source: [`packages/interaction/command-btw/src/index.ts:39`](../packages/interaction/command-btw/src/index.ts)
+
 <a id="deepseek-aidsh-compaction-basic"></a>
 
 ## `@deepseek-ai/dsh-compaction-basic`
@@ -2187,7 +2206,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/subagent/subagent-fork-in-process/src/index.ts:31`](../packages/subagent/subagent-fork-in-process/src/index.ts)
+Source: [`packages/subagent/subagent-fork-in-process/src/index.ts:30`](../packages/subagent/subagent-fork-in-process/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-spawn-in-process"></a>
 
@@ -2263,6 +2282,10 @@ export interface Config {
   shellPath?: string
   /** Shell arguments (default: `--noprofile --norc -i`). */
   shellArgs?: string[]
+  /** Human-terminal shell executable (default: the operating-system account shell). */
+  humanShellPath?: string
+  /** Human-terminal shell arguments (default: `-l`). */
+  humanShellArgs?: string[]
   /** Terminal rows. */
   rows?: number
   /** Terminal columns. */
@@ -3056,6 +3079,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-settings-plugin-inventory` ([`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-plugins` ([`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-sidebar` ([`packages/client/ui-sidebar/src/index.ts`](../packages/client/ui-sidebar/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-sidepanel` ([`packages/client/ui-sidepanel/src/index.ts`](../packages/client/ui-sidepanel/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-skill` ([`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-subagent` ([`packages/client/ui-subagent/src/index.ts`](../packages/client/ui-subagent/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-theme` ([`packages/client/ui-theme/src/index.ts`](../packages/client/ui-theme/src/index.ts))

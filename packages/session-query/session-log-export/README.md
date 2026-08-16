@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Web Session-log download control over the host-streamed ZIP endpoint owned by `dsh-host-apiproxy`. The Host half registers `/export`; the browser half owns a 111×32 `Session log` action in the Session Header, one download controller, and one modal shared by that button and the slash command. ZIP generation, raw JSONL/zstd reads, descendants, attachments, backpressure, and HTTP error semantics remain owned by the [ApiProxy download implementation](../../host/apiproxy/README.md).
+Web Session-log download control over the host-streamed ZIP endpoint owned by `dsh-host-apiproxy`. The Host half registers `/export`; the browser half owns a side panel app (a launchpad card plus a keyed tab body in [ui-sidepanel](../../client/ui-sidepanel/README.md)'s seats) with one download button, one download controller, and one modal shared by that button and the slash command. ZIP generation, raw JSONL/zstd reads, descendants, attachments, backpressure, and HTTP error semantics remain owned by the [ApiProxy download implementation](../../host/apiproxy/README.md).
 
 ## Command contract
 

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { userInfo } from 'node:os'
 import { PassThrough } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -217,6 +218,80 @@ describe('BashTerminalBackend startup rollback', () => {
       argv: ['/bin/bash', '-i'],
       policy: { mode: 'workspace-write', sessionId: 'agent', workspaceRoot: '/workspace' },
     }])
+  })
+
+  it('advertises a capable terminal to human VT renderers', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    let spawned: SubprocessTerminalSpawnSpec | undefined
+    const session = { initialize: () => Promise.resolve() } as unknown as LocalPtySession
+    const backend = new BashTerminalBackend(
+      ctx,
+      config(),
+      async (request) => {
+        spawned = request
+        return terminalHandle()
+      },
+      () => session,
+    )
+
+    expect(backend.supportsInteractive).toBe(true)
+    await backend.spawn({ ...spec(agent(ctx)), presentation: 'human' })
+    expect(spawned?.env?.TERM).toBe('xterm-256color')
+  })
+
+  it('starts human attachments in the account login shell without model prompt overrides', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    let spawned: SubprocessTerminalSpawnSpec | undefined
+    const session = { initialize: () => Promise.resolve() } as unknown as LocalPtySession
+    const backend = new BashTerminalBackend(
+      ctx,
+      config(),
+      async (request) => {
+        spawned = request
+        return terminalHandle()
+      },
+      () => session,
+    )
+
+    await backend.spawn({ ...spec(agent(ctx)), presentation: 'human' })
+
+    expect(spawned).toMatchObject({
+      argv: [userInfo().shell, '-l'],
+      env: {
+        TERM: 'xterm-256color',
+        SHELL: userInfo().shell,
+        DSH_SHELL: '1',
+        DSH_SESSION_ID: 'agent',
+        DSH_PTY_SESSION_ID: 'pty-1',
+      },
+    })
+    expect(spawned?.env).not.toHaveProperty('PS1')
+    expect(spawned?.env).not.toHaveProperty('PROMPT_COMMAND')
+    expect(spawned?.env).not.toHaveProperty('PAGER')
+    expect(spawned?.env).not.toHaveProperty('GIT_PAGER')
+  })
+
+  it('honors an explicit human shell override', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    let spawned: SubprocessTerminalSpawnSpec | undefined
+    const session = { initialize: () => Promise.resolve() } as unknown as LocalPtySession
+    const backend = new BashTerminalBackend(
+      ctx,
+      { ...config(), humanShellPath: '/custom/fish', humanShellArgs: ['-i'] },
+      async (request) => {
+        spawned = request
+        return terminalHandle()
+      },
+      () => session,
+    )
+
+    await backend.spawn({ ...spec(agent(ctx)), presentation: 'human' })
+
+    expect(spawned?.argv).toEqual(['/custom/fish', '-i'])
+    expect(spawned?.env?.SHELL).toBe('/custom/fish')
   })
 
   it('resolves session mode and root together before wrapping the shell', async () => {

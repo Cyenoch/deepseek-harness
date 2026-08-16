@@ -69,16 +69,20 @@ describe('tsdown client artifact', () => {
     ])
   })
 
-  it.skipIf(code === undefined)('mounted as an object plugin, apply registers the view tab on the real ring', async () => {
+  it.skipIf(code === undefined)('mounted as an object plugin, apply registers the side panel app on the real seats', async () => {
     const { exports } = await loadArtifact()
     const ctx = new Context()
     const slots = new SlotRegistry(ctx)
     await ctx.plugin(ConversationEventRegistry).await()
     await ctx.plugin(ConversationViewRegistry).await()
-    // The conversation entry's role: the ring must be declared before riders land.
+    // The side panel shell's role: both app seats must be declared before
+    // riders land.
     slots.register({
       name: 'root',
-      children: { 'conversation.view': { kind: 'list', scope: 'session' } },
+      children: {
+        'sidepanel.app': { kind: 'keyed', scope: 'session-maybe' },
+        'sidepanel.launchpad': { kind: 'list', scope: 'session-maybe' },
+      },
     }, (_p: { renderSlot?: unknown }) => null)
     // Paging is session-owned; this registration-only probe never renders the
     // entry, so the binding stays deliberately empty. The locale plugin backs
@@ -94,11 +98,13 @@ describe('tsdown client artifact', () => {
     await fiber.await()
     const events = ctx.get('conversationEvents') as ConversationEventRegistry
     const views = ctx.get('conversationViews') as ConversationViewRegistry
-    expect(slots.entries('conversation.view').map(e => e.options.id)).toEqual(['trajectory'])
+    expect(slots.entries('sidepanel.app').map(e => e.options.key)).toEqual(['trajectory'])
+    expect(slots.entries('sidepanel.launchpad').map(e => e.options.id)).toEqual(['trajectory'])
     expect(events.entries().length).toBeGreaterThan(0)
     expect(views.entries()).toHaveLength(1)
     await fiber.dispose()
-    expect(slots.entries('conversation.view')).toHaveLength(0)
+    expect(slots.entries('sidepanel.app')).toHaveLength(0)
+    expect(slots.entries('sidepanel.launchpad')).toHaveLength(0)
     expect(events.entries()).toEqual([])
     expect(views.entries()).toEqual([])
   })

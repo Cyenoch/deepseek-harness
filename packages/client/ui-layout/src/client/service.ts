@@ -27,6 +27,12 @@ export interface ILayout {
   openDetails(): void
   /** Close the details panel. */
   closeDetails(): void
+  /** Toggle the side panel (closed ⟷ contract default width). */
+  toggleSidepanel(): void
+  /** Open the side panel (no-op when already open). */
+  openSidepanel(): void
+  /** Close the side panel. */
+  closeSidepanel(): void
 }
 
 /** Cross-plugin panel-action face (ctx.layout). */
@@ -57,6 +63,21 @@ export class LayoutController implements ILayout {
   /** Close the details panel. */
   closeDetails(): void {
     this.#require().closeDetails()
+  }
+
+  /** Toggle the side panel (closed ⟷ contract default width). */
+  toggleSidepanel(): void {
+    this.#require().toggleSidepanel()
+  }
+
+  /** Open the side panel (no-op when already open). */
+  openSidepanel(): void {
+    this.#require().openSidepanel()
+  }
+
+  /** Close the side panel. */
+  closeSidepanel(): void {
+    this.#require().closeSidepanel()
   }
 
   #require(): PanelActions {

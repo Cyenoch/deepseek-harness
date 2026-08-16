@@ -1,18 +1,17 @@
 // @vitest-environment jsdom
 /**
- * View registration acceptance on the real framework stack: the plugin fiber
- * registers Trajectory into a real SlotRegistry view ring, tabs
- * switch inside ConversationRoot (renderSlot share driven by the same tab
- * projection apply uses) without collapsing chat, trajectory renders the
- * event ledger with its timing overview, and fiber disposal removes the tab.
- * Timeline projection and inclusive focus edge cases ride along.
+ * Registration acceptance on the real framework stack: the plugin fiber
+ * registers the Trajectory as a side panel app (launchpad card + keyed tab
+ * body) in a real SlotRegistry, the body renders the event ledger with its
+ * timing overview under outlet-faithful session-maybe shares, and fiber
+ * disposal removes both entries. Timeline projection and inclusive focus
+ * edge cases ride along.
  */
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { createElement, type ComponentProps, type FC, type ReactNode } from 'react'
+import { createElement, type ComponentProps, type FC } from 'react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
-import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   ConversationEventRegistry, ConversationViewRegistry, createSnapshotStore,
   EMPTY_CHAT_SNAPSHOT,
@@ -22,13 +21,6 @@ import type {
   ConversationSnapshot, RequestView,
   SessionId, SessionListState, SnapshotStore, WorkspaceListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConvViewProps, ViewTab } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import {
-  ConversationSession, ConversationSessionHeader,
-  type ConversationSessionHeaderProps, type ConversationSessionProps,
-} from '@deepseek-ai/dsh-client-ui-conversation/src/client/skeleton/ConversationSession.tsx'
-import { createChatStore } from '@deepseek-ai/dsh-client-ui-conversation/src/client/stores.ts'
-import { zh as conversationZh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 import { apply as localeApply, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import type { LocaleKeysOf } from '@deepseek-ai/dsh-client-ui-slots'
@@ -38,17 +30,15 @@ import { apply as nodeApply } from '@deepseek-ai/dsh-client-ui-trajectory'
 import type { TrajectoryTurnModel } from '../src/client/layout.ts'
 import { TrajectoryTimeline } from '../src/client/TrajectoryTimeline.tsx'
 import {
-  TrajectoryView, type TrajectoryViewInjected,
+  TrajectoryView, type TrajectoryViewInjected, type TrajectoryViewProps,
 } from '../src/client/TrajectoryView.tsx'
+import { TrajectoryLaunchCard, type TrajectoryLaunchCardProps } from '../src/client/TrajectoryLaunchCard.tsx'
 import { createTrajectoryDurationStore } from '../src/client/duration-store.ts'
 import type { TrajectorySnapshot } from '../src/client/trajectory-contract.ts'
 import { deriveTrajectoryTimeline } from '../src/client/timeline.ts'
 
 const SID = 's1' as SessionId
 const sessionSnapshots = new WeakMap<SlotRegistry, SnapshotStore<ConversationSnapshot>>()
-const tConversation: ConversationSessionHeaderProps['t'] =
-  key => (conversationZh as Record<string, string>)[key] ?? key
-
 afterEach(cleanup)
 // The chat store persists under its declared key; clear so one case's active
 // view cannot rehydrate into the next.
@@ -156,10 +146,10 @@ function emptyWorkspaces() {
   return bindSnapshotSelector(store)
 }
 
-/** Standalone view props: the session-scope standard kit the outlet would bake. */
+/** Standalone app props: the session-maybe standard kit the outlet would bake. */
 function standaloneProps(
   nodes: ConversationSnapshot['nodes'],
-): ConvViewProps & { t: (key: LocaleKeysOf<'trajectory'>) => string } {
+): TrajectoryViewProps {
   return {
     sessionId: SID,
     useSession: fakeSession(nodes).useSession,
@@ -168,7 +158,7 @@ function standaloneProps(
     useProjection: (() => undefined) as never,
     // The locale seat the outlet would inject for the declared namespace.
     t: (key: LocaleKeysOf<'trajectory'>) => zh[key as TrajectoryKey] ?? key,
-  } as unknown as ConvViewProps & { t: (key: LocaleKeysOf<'trajectory'>) => string }
+  } as unknown as TrajectoryViewProps
 }
 
 /** Real-stack bench: root Context + real SlotRegistry ring + the plugin fiber. */
@@ -188,14 +178,14 @@ async function bench(snapshot = historySnapshot(NODES)) {
     binding: () => ({ session }),
   })
   sessionSnapshots.set(slots, sessionStore)
-  // The conversation entry's role: declare the ring, then seed the chat entry.
+  // The side panel shell's role: declare both app seats the plugin targets.
   slots.register({
     name: 'root',
-    children: { 'conversation.view': { kind: 'list', scope: 'session' } },
+    children: {
+      'sidepanel.app': { kind: 'keyed', scope: 'session-maybe' },
+      'sidepanel.launchpad': { kind: 'list', scope: 'session-maybe' },
+    },
   }, (_p: { renderSlot?: unknown }) => null)
-  const chatBody = vi.fn(() => <div data-testid="chat-body" />)
-  slots.register(
-    { name: 'conversation.view', id: 'chat', order: 0, label: 'Chat' } as never, chatBody as never)
   // The locale plugin backs the locale-aware view tab label ('locale' in
   // inject); its settings scope needs a connection handle and the
   // forwarded-event port.
@@ -208,106 +198,47 @@ async function bench(snapshot = historySnapshot(NODES)) {
   return { ctx, slots, fiber, loadOlder, sessionStore }
 }
 
-/** Tab projection twin of apply's viewTabs (the render-side consumption path). */
-function tabsOf(slots: SlotRegistry): ViewTab[] {
-  return slots.entries('conversation.view')
-    .map(e => ({ id: e.options.id!, label: resolveSlotLabel(e.options.label) ?? e.options.id! }))
+/** The trajectory's keyed entry on the side panel app seat. */
+function appEntryOf(slots: SlotRegistry) {
+  const entry = slots.entries('sidepanel.app').find(e => e.options.key === 'trajectory')
+  if (entry === undefined) throw new Error('sidepanel.app entry "trajectory" missing')
+  return entry
 }
 
-/** Mount the strict Session header/body over the ring ledger with outlet-faithful render shares. */
+/** Mount the trajectory app body with outlet-faithful session-maybe shares. */
 function mount(slots: SlotRegistry, nodes: ConversationSnapshot['nodes'] = NODES) {
   const sessionSnapshot = sessionSnapshots.get(slots) ?? createSnapshotStore(historySnapshot(nodes))
   const useSession = bindSnapshotSelector(sessionSnapshot)
-  const chat = createChatStore().create()
-  const views = {
-    list: () => tabsOf(slots),
-    subscribe: (fn: () => void) => slots.subscribe('conversation.view', fn),
-    version: () => slots.getVersion('conversation.view'),
-  }
-  const useInput = bindSnapshotSelector(createSnapshotStore({
-    draft: '', imageIds: [], draftRev: 0, phase: 'plain', occurrences: [], queue: [],
-  })) as never
-  const inputActions = {
-    setDraft: vi.fn(), addImages: vi.fn(), removeImage: vi.fn(), pruneImages: vi.fn(), submit: vi.fn(),
-  }
-  // Minimal outlet twin: resolve the ring entry by the `only` filter and
-  // render it with the session standard kit (what SlotOutlet does for a
-  // list-kind session slot, minus machinery).
-  const renderSlot = ((key: string, _owner: object, opts?: { only?: string }): ReactNode => {
-    const entry = slots.entries('conversation.view').find(e => e.options.id === opts?.only)
-    if (entry === undefined) return null
-    const View = entry.component as FC<ConvViewProps>
-    const injectEntry = entry.inject as ((sessionId: SessionId) => object) | undefined
-    const injected = injectEntry === undefined
-      ? {}
-      : injectEntry(SID)
-    const injectedProps = 'hooks' in injected
-      ? (() => {
-        const trajectory = injected as TrajectoryViewInjected
-        return {
-          loadOlder: trajectory.loadOlder,
-          setActualDuration: trajectory.setActualDuration,
-          useDuration: bindSnapshotSelector(trajectory.hooks.duration),
-          t: (key: TrajectoryKey) => zh[key],
-        }
-      })()
-      : injected
-    return (
-      <View
-        {...injectedProps}
-        {...({ sessionId: SID, useSession, useSessions: emptySessions(), useWorkspaces: emptyWorkspaces() } as unknown as ConvViewProps)}
-        key={key}
-      />
-    )
-  }) as unknown as ConversationSessionProps['renderSlot']
-  return render(
-    <>
-      <ConversationSessionHeader
-        sessionId={SID}
-        SessionProvider={({ children }) => children(SID)}
-        useSession={useSession}
-        useSessions={emptySessions()}
-        useWorkspaces={emptyWorkspaces()}
-        useProjection={(() => undefined)}
-        useStore={bindSnapshotSelector(chat)}
-        actions={chat.actions}
-        renderSlot={() => null}
-        views={views}
-        useInput={useInput}
-        inputActions={inputActions}
-        open={vi.fn()}
-        t={tConversation}
-      />
-      <ConversationSession
-        sessionId={SID}
-        SessionProvider={({ children }) => children(SID)}
-        useSession={useSession}
-        useSessions={emptySessions()}
-        useWorkspaces={emptyWorkspaces()}
-        useProjection={(() => undefined)}
-        useStore={bindSnapshotSelector(chat)}
-        actions={chat.actions}
-        renderSlot={renderSlot}
-        views={views}
-        releaseSessionImages={vi.fn()}
-        useInput={useInput}
-        inputActions={inputActions}
-        bindDraftMirror={() => () => {}}
-      />
-    </>,
-  )
+  const entry = appEntryOf(slots)
+  // Minimal outlet twin: the keyed seat dispatches by key and hands the
+  // component its inject face plus the session-maybe standard kit (what
+  // SlotOutlet does for a keyed session-maybe slot, minus machinery).
+  const App = entry.component as FC<TrajectoryViewProps>
+  const injectEntry = entry.inject as unknown as (sessionId: SessionId | undefined) => TrajectoryViewInjected
+  const injected = injectEntry(SID)
+  const props = {
+    loadOlder: injected.loadOlder,
+    setActualDuration: injected.setActualDuration,
+    useDuration: bindSnapshotSelector(injected.hooks.duration),
+    t: (key: TrajectoryKey) => zh[key],
+    sessionId: SID,
+    useSession,
+    useSessions: emptySessions(),
+    useWorkspaces: emptyWorkspaces(),
+  } as unknown as TrajectoryViewProps
+  return render(<App {...props} />)
 }
 
 describe('plugin registration', () => {
-  it('registers trajectory after chat on the ring', async () => {
+  it('registers the trajectory app on the side panel seats', async () => {
     const b = await bench()
-    expect(tabsOf(b.slots)).toEqual([
-      { id: 'chat', label: 'Chat' },
-      { id: 'trajectory', label: 'Trajectory' },
-    ])
+    expect(b.slots.entries('sidepanel.app').map(e => e.options.key)).toEqual(['trajectory'])
+    expect(b.slots.entries('sidepanel.launchpad').map(e => e.options.id)).toEqual(['trajectory'])
+    // The conversation view ring is untouched: the plugin left it entirely.
+    expect(b.slots.entries('conversation.view')).toHaveLength(0)
   })
 
-  it('fiber disposal removes the tab and leaves chat standing', async () => {
+  it('fiber disposal removes both entries and the definitions', async () => {
     const b = await bench()
     const events = b.ctx.get('conversationEvents') as ConversationEventRegistry
     const views = b.ctx.get('conversationViews') as ConversationViewRegistry
@@ -316,18 +247,16 @@ describe('plugin registration', () => {
 
     await b.fiber.dispose()
 
-    expect(tabsOf(b.slots).map(v => v.id)).toEqual(['chat'])
+    expect(b.slots.entries('sidepanel.app')).toHaveLength(0)
+    expect(b.slots.entries('sidepanel.launchpad')).toHaveLength(0)
     expect(events.entries()).toEqual([])
     expect(views.entries()).toEqual([])
   })
 
   it('shares one browser-wide duration preference across session injections', async () => {
     const b = await bench()
-    const entry = b.slots.entries('conversation.view')
-      .find(candidate => candidate.options.id === 'trajectory')
-    expect(entry).toBeDefined()
-    const injectEntry = entry!.inject as unknown as (
-      sessionId: SessionId,
+    const injectEntry = appEntryOf(b.slots).inject as unknown as (
+      sessionId: SessionId | undefined,
     ) => TrajectoryViewInjected
     const first = injectEntry(SID)
     const second = injectEntry('s2' as SessionId)
@@ -341,10 +270,8 @@ describe('plugin registration', () => {
 
   it('reports whether loading older history changed the Trajectory snapshot', async () => {
     const b = await bench()
-    const entry = b.slots.entries('conversation.view')
-      .find(candidate => candidate.options.id === 'trajectory')
-    const injectEntry = entry!.inject as unknown as (
-      sessionId: SessionId,
+    const injectEntry = appEntryOf(b.slots).inject as unknown as (
+      sessionId: SessionId | undefined,
     ) => TrajectoryViewInjected
     const injected = injectEntry(SID)
 
@@ -355,47 +282,78 @@ describe('plugin registration', () => {
     })
     expect(await injected.loadOlder()).toBe(true)
   })
+
+  it('the no-session inject face settles loadOlder without a binding', async () => {
+    const b = await bench()
+    const injectEntry = appEntryOf(b.slots).inject as unknown as (
+      sessionId: SessionId | undefined,
+    ) => TrajectoryViewInjected
+    await expect(injectEntry(undefined).loadOlder()).resolves.toBe(false)
+    expect(b.loadOlder).not.toHaveBeenCalled()
+  })
 })
 
-describe('tab switching in ConversationRoot', () => {
-  it('renders two tabs, defaults to chat, and switches to the trajectory ledger', async () => {
+describe('the side panel app body', () => {
+  it('renders the trajectory ledger with its timing overview', async () => {
     const b = await bench()
     const view = mount(b.slots)
-    expect(screen.getByTestId('chat-body')).toBeTruthy()
-    expect(screen.getAllByRole('tab').map(t => t.textContent)).toEqual(['Chat', 'Trajectory'])
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
     expect(screen.queryByText(/turns ·/)).toBeNull()
     expect(view.container.querySelectorAll('tr[data-turn-start="true"]')).toHaveLength(2)
     expect(screen.queryByRole('columnheader')).toBeNull()
     expect(screen.getByRole('toolbar', { name: '轨迹工具栏' })).toBeTruthy()
     expect(screen.getByRole('region', { name: 'Trajectory timeline' })).toBeTruthy()
-    expect(view.container.querySelector('[data-conversation-composer-overlay]')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Collapse turns' }))
     expect(view.container.querySelector('[data-collapsed-summary="turn"]')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Expand turns' }))
     expect(screen.getByRole('row', { name: /USER/ })).toBeTruthy()
-    expect(screen.queryByTestId('chat-body')).toBeNull()
-    expect(b.loadOlder).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('tab', { name: 'Chat' }))
     expect(b.loadOlder).not.toHaveBeenCalled()
   })
 
-  it('labels the trajectory tab in the active locale', async () => {
+  it('renders the no-session notice while no session is current', async () => {
+    await bench()
+    const useSession = ((_sel: (s: ConversationSnapshot) => unknown) => undefined) as never
+    const props = {
+      t: (key: TrajectoryKey) => zh[key],
+      sessionId: undefined,
+      useSession,
+      useSessions: emptySessions(),
+      useWorkspaces: emptyWorkspaces(),
+      useDuration: bindSnapshotSelector(createTrajectoryDurationStore()),
+      loadOlder: async () => false,
+      setActualDuration: () => {},
+    } as unknown as TrajectoryViewProps
+    const view = render(<TrajectoryView {...props} />)
+    expect(view.container.textContent).toContain(zh['sidepanel.noSession'])
+  })
+
+  it('the launchpad card opens the tab titled in the active locale', async () => {
     const b = await bench()
-    const labelOf = () => tabsOf(b.slots).find(tab => tab.id === 'trajectory')?.label
-    expect(labelOf()).toBe('Trajectory')
-    const locale = b.ctx.get('locale') as { setLocale(id: string): void }
-    locale.setLocale('zh')
-    expect(labelOf()).toBe('轨迹')
+    const locale = b.ctx.get('locale') as unknown as {
+      setLocale(id: string): void
+      bind: (ns: string) => (key: string) => string
+    }
     locale.setLocale('en')
-    expect(labelOf()).toBe('Trajectory')
+    const open = vi.fn()
+    const tEn = locale.bind('trajectory')
+    const cardEn = { open, t: tEn, useSessions: emptySessions(), useWorkspaces: emptyWorkspaces() } as never as TrajectoryLaunchCardProps
+    const card = render(<TrajectoryLaunchCard {...cardEn} />)
+    fireEvent.click(card.container.querySelector('button')!)
+    expect(open).toHaveBeenCalledWith({ id: 'trajectory', title: 'Trajectory' })
+    expect(card.getByText('Trajectory')).toBeTruthy()
+
+    locale.setLocale('zh')
+    const tZh = locale.bind('trajectory')
+    const cardZhProps = {
+      open, t: tZh, useSessions: emptySessions(), useWorkspaces: emptyWorkspaces(),
+    } as never as TrajectoryLaunchCardProps
+    const cardZh = render(<TrajectoryLaunchCard {...cardZhProps} />)
+    fireEvent.click(cardZh.container.querySelector('button')!)
+    expect(open).toHaveBeenLastCalledWith({ id: 'trajectory', title: '轨迹' })
   })
 
   it('opens a local record inspector and switches payload tabs without opening chat details', async () => {
     const b = await bench()
     mount(b.slots)
-    fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
 
     fireEvent.keyDown(screen.getByRole('row', { name: /TOOL/ }), { key: 'Enter' })
     expect(screen.getByRole('complementary', { name: 'Event details' })).toBeTruthy()
@@ -432,7 +390,6 @@ describe('tab switching in ConversationRoot', () => {
     }
     const b = await bench(historySnapshot(nodes, { requests: [compaction] }))
     const view = mount(b.slots, nodes)
-    fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
 
     expect(screen.getByText('Between turns')).toBeTruthy()
     expect(view.container.textContent).not.toContain('Turn null')
@@ -484,7 +441,6 @@ describe('tab switching in ConversationRoot', () => {
     ]
     const b = await bench(historySnapshot(nodes, { requests: compactions }))
     mount(b.slots, nodes)
-    fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
 
     const firstRequest = screen.getByRole('button', { name: 'Request #2 · Compaction' })
     const secondRequest = screen.getByRole('button', { name: 'Request #4 · Compaction' })
@@ -509,7 +465,6 @@ describe('tab switching in ConversationRoot', () => {
   it('dragging the overview focuses overlapping records without filtering the ledger', async () => {
     const b = await bench()
     mount(b.slots)
-    fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
     const plot = screen.getByLabelText('Timeline overview; drag horizontally to focus events')
     vi.spyOn(plot, 'getBoundingClientRect').mockReturnValue({
       x: 0, y: 0, left: 0, top: 0, right: 100, bottom: 72, width: 100, height: 72,
@@ -541,7 +496,6 @@ describe('tab switching in ConversationRoot', () => {
   it('clicking a timeline block clears the range, selects the record, and opens its inspector', async () => {
     const b = await bench()
     const view = mount(b.slots)
-    fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
     const plot = screen.getByLabelText('Timeline overview; drag horizontally to focus events')
     vi.spyOn(plot, 'getBoundingClientRect').mockReturnValue({
       x: 0, y: 0, left: 0, top: 0, right: 100, bottom: 72, width: 100, height: 72,
@@ -579,7 +533,6 @@ describe('tab switching in ConversationRoot', () => {
   it('empty window keeps the toolbar and reports no timing data', async () => {
     const b = await bench(historySnapshot([]))
     mount(b.slots)
-    fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
     expect(screen.getByRole('toolbar', { name: '轨迹工具栏' })).toBeTruthy()
     expect(screen.getByText('No timing data')).toBeTruthy()
     expect(screen.getByRole<HTMLButtonElement>('button', {

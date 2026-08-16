@@ -7,6 +7,7 @@ The services and plugins through which a human collaborates with a running agent
 | Package | Role | ctx key |
 |---|---|---|
 | [`commands/`](commands/README.md) | Registers and dispatches human commands for interactive adapters. | `ctx.commands` |
+| [`command-btw/`](command-btw/README.md) | Answers `/btw` side questions in a forked ephemeral child. | (registers on `ctx.commands`) |
 | [`user-approval/`](user-approval/README.md) | Coordinates one-shot approval decisions. | `ctx.approval` |
 | [`permission/`](permission-presets/README.md) | Presents and persists user-facing permission presets. | `ctx.permissionPresets` |
 | [`user-questions/`](user-questions/README.md) | Defines the provider-neutral human question/answer seam. | `ctx.userQuestions` |

@@ -66,6 +66,15 @@
       config:
         maxNoteBytes: 8192
 
+    # Human terminal sessions are host-owned and keyed by Agent, so every Web
+    # preset can use the same side-panel transport without adding a model tool.
+    - id: terminal
+      name: '@deepseek-ai/dsh-terminal'
+
+    - id: human-terminal-bash
+      name: '@deepseek-ai/dsh-terminal-bash'
+      disabled: !!js process.platform === 'win32'
+
     # Browser Session export: `/export` command plus the shared download dialog.
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'
@@ -141,6 +150,7 @@
     # client-side package, which a host-side bundle cannot import.
     - id: client-hmr
       name: '@deepseek-ai/dsh-client-hmr'
+      inject: [webServer]
 
     # ── browser plugin roster (dsh.client rows; node halves are layer-2 hosts) ──
 
@@ -150,6 +160,7 @@
     # entry by the kernel, never fetched).
     - id: modules
       name: '@deepseek-ai/dsh-client-modules'
+      inject: [webServer]
 
     # Owns both ends of the web transport: node half binds the gateway to the
     # webserver under /api; browser half is the fetch/SSE client.
@@ -182,6 +193,9 @@
 
     - id: ui-sidebar
       name: '@deepseek-ai/dsh-client-ui-sidebar'
+
+    - id: ui-sidepanel
+      name: '@deepseek-ai/dsh-client-ui-sidepanel'
 
     - id: ui-settings
       name: '@deepseek-ai/dsh-client-ui-settings'

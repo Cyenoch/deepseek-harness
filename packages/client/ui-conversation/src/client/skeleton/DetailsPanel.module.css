@@ -21,6 +21,11 @@
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
+/* macOS hidden-inset: keep the close control below the window-drag strip. */
+:global(html[data-dsh-window-chrome='macos-hidden-inset']) .header {
+  padding-top: 32px;
+}
+
 /* figma I54:42735;43:41479: 14/20 wt500. */
 .title {
   overflow: hidden;

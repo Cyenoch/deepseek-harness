@@ -9,6 +9,7 @@ import type {
 import { TerminalError } from '@deepseek-ai/dsh-terminal'
 import type {
   TerminalBackendSession,
+  TerminalInteractiveSession,
   TerminalReadRequest,
   TerminalReadResult,
   TerminalSendOperation,
@@ -22,6 +23,7 @@ import type {
 } from '@deepseek-ai/dsh-terminal'
 import type { ResolvedConfig } from './config.ts'
 import { CONTROLLED_PROMPT, TerminalSanitizer } from './sanitize.ts'
+import { RawTerminalStream } from './raw-stream.ts'
 
 function utf8Tail(text: string, maxBytes: number): { text: string; truncated: boolean } {
   if (Buffer.byteLength(text) <= maxBytes) return { text, truncated: false }
@@ -156,9 +158,11 @@ class LocalSendOperation implements TerminalSendOperation {
 export class LocalPtySession implements TerminalBackendSession {
   motd = ''
   readonly pid: number
+  readonly interactive: TerminalInteractiveSession
   private readonly decoder = new TextDecoder()
   private readonly sanitizer: TerminalSanitizer
   private readonly scrollback: BoundedTextBuffer
+  private readonly rawStream: RawTerminalStream
   private readonly outputEnded = Promise.withResolvers<void>()
   private readonly completion: Promise<void>
   private statusValue: TerminalSessionStatus = { kind: 'running' }
@@ -192,6 +196,12 @@ export class LocalPtySession implements TerminalBackendSession {
     this.pid = terminal.pid
     this.sanitizer = new TerminalSanitizer(config.maxReadBytes)
     this.scrollback = new BoundedTextBuffer(config.scrollbackMaxBytes, config.scrollbackLines)
+    this.rawStream = new RawTerminalStream(config.scrollbackMaxBytes, config.maxReadBytes)
+    this.interactive = {
+      write: data => this.writeInteractive(data),
+      read: (cursor, signal) => this.rawStream.read(cursor, signal),
+      resize: (cols, rows) => this.resizeInteractive(cols, rows),
+    }
     terminal.output.on('data', this.onTerminalData)
     terminal.output.once('end', this.onTerminalEnd)
     terminal.output.once('error', this.onTerminalError)
@@ -378,6 +388,7 @@ export class LocalPtySession implements TerminalBackendSession {
   }
 
   private onData(data: string): void {
+    this.rawStream.append(data)
     const sanitized = this.sanitizer.push(data)
     this.appendOutput(sanitized.text)
     if (sanitized.prompt) {
@@ -402,6 +413,7 @@ export class LocalPtySession implements TerminalBackendSession {
     await this.outputEnded.promise
     if (this.transportFailure !== undefined) return
     this.statusValue = { kind: 'exited', exitCode: outcome.exitCode, signal: outcome.signal }
+    this.rawStream.close()
     this.settleActive('session_exit')
   }
 
@@ -409,6 +421,7 @@ export class LocalPtySession implements TerminalBackendSession {
     const failure = error instanceof Error ? error : new Error(String(error))
     this.transportFailure ??= failure
     this.statusValue = { kind: 'exited', exitCode: null, signal: null }
+    this.rawStream.close()
     this.failActive(failure)
     void this.terminal.terminate().catch(() => {})
   }
@@ -418,6 +431,21 @@ export class LocalPtySession implements TerminalBackendSession {
     this.lastOutputAt = Date.now()
     this.scrollback.append(text)
     this.active?.append(text)
+  }
+
+  private async writeInteractive(data: string): Promise<void> {
+    if (this.closing) throw new Error('PTY session is closing')
+    if (this.statusValue.kind === 'exited') throw new Error('PTY session has exited')
+    if (this.active !== undefined) throw new TerminalError('PTY session has an active model send', 'SEND_ACTIVE')
+    await this.terminal.write(data)
+  }
+
+  private async resizeInteractive(cols: number, rows: number): Promise<boolean> {
+    if (this.closing) throw new Error('PTY session is closing')
+    if (this.statusValue.kind === 'exited') return false
+    if (this.terminal.resize === undefined) return false
+    await this.terminal.resize(cols, rows)
+    return true
   }
 
   private schedulePoll(operation: LocalSendOperation, delayMs = this.config.pollIntervalMs): void {

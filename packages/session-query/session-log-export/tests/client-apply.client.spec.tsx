@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { SessionLogDownloadHeaderAction } from '../src/client/HeaderAction.tsx'
+import type {} from '@deepseek-ai/dsh-client-ui-sidepanel/client'
+import { SessionLogLaunchCard, SessionLogSidepanelApp } from '../src/client/SidepanelApp.tsx'
 import { apply, inject } from '../src/client/index.ts'
 
 const SID = 'session-export-apply' as SessionId
@@ -15,8 +15,8 @@ function declare(slots: SlotRegistry): () => void {
   return slots.register({
     name: 'root',
     children: {
-      'conversation.session.header.actions': { kind: 'list', scope: 'session' },
-      'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
+      'sidepanel.app': { kind: 'keyed', scope: 'session-maybe' },
+      'sidepanel.launchpad': { kind: 'list', scope: 'session-maybe' },
     },
   } as never, () => null)
 }
@@ -33,15 +33,17 @@ async function bench() {
 }
 
 describe('session-log-download browser plugin', () => {
-  it('provides one controller and removes its Header contribution on disposal', async () => {
+  it('provides one controller and removes its side panel contributions on disposal', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 500 })))
     const b = await bench()
     expect(inject).toEqual(['slots', 'locale'])
     expect(b.ctx.sessionLogDownload).toBeDefined()
-    expect(b.slots.entries('conversation.session.header.actions')).toHaveLength(0)
-    const entry = b.slots.entries('conversation.session.header.utilities')[0]
-    expect(entry?.component).toBe(SessionLogDownloadHeaderAction)
-    expect(entry?.options).toMatchObject({ id: 'session-log-download' })
+    const card = b.slots.entries('sidepanel.launchpad')[0]
+    expect(card?.component).toBe(SessionLogLaunchCard)
+    expect(card?.options).toMatchObject({ id: 'session-log' })
+    const entry = b.slots.entries('sidepanel.app')[0]
+    expect(entry?.component).toBe(SessionLogSidepanelApp)
+    expect(entry?.options).toMatchObject({ key: 'session-log' })
     const injected = (entry?.inject as unknown as () => import('../src/client/Dialog.tsx').SessionLogDownloadDialogInjected)()
     await injected.request(SID)
     expect(b.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.status).toBe('error')
@@ -49,7 +51,8 @@ describe('session-log-download browser plugin', () => {
     expect(b.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.open).toBe(false)
 
     await b.fiber.dispose()
-    expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
+    expect(b.slots.entries('sidepanel.app')).toHaveLength(0)
+    expect(b.slots.entries('sidepanel.launchpad')).toHaveLength(0)
   })
 
   it('downloads only for an export execution acknowledged by this browser client', async () => {
@@ -73,13 +76,13 @@ describe('session-log-download browser plugin', () => {
     await second.fiber.dispose()
   })
 
-  it('re-registers after the declaring Header slot collapses and returns', async () => {
+  it('re-registers after the declaring side panel slots collapse and return', async () => {
     const b = await bench()
     b.declaration()
-    expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
+    expect(b.slots.entries('sidepanel.app')).toHaveLength(0)
     const redeclare = declare(b.slots)
     await Promise.resolve()
-    expect(b.slots.entries('conversation.session.header.utilities')[0]?.component).toBe(SessionLogDownloadHeaderAction)
+    expect(b.slots.entries('sidepanel.app')[0]?.component).toBe(SessionLogSidepanelApp)
     redeclare()
     await b.fiber.dispose()
   })

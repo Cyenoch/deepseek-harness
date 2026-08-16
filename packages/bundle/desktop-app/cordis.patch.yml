@@ -13,7 +13,11 @@
 - id: web-runtime
   disabled: true
 
+- id: modules
+  inject: [desktopRuntime]
+
 - id: client-hmr
+  inject: [desktopRuntime]
   config:
     transport: electron
 

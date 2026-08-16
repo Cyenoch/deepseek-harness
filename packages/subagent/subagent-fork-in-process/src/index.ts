@@ -9,8 +9,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import { completedTurnPrefix } from '@deepseek-ai/dsh-subagent'
 import type {
   ContinuableCreateRequest,
   ContinuableCreateSpec,
@@ -36,22 +35,6 @@ export interface Config {
 export const Config: z<Config> = z.object({
   providerName: z.string().default('fork'),
 })
-
-/**
- * The balanced completed-turn prefix of `parent`'s log: every event up to and including the
- * last `turn/end`. The in-flight turn is excluded; before any completed turn the child starts
- * fresh. Because live sequence numbers equal array indexes, the result remains a valid seed
- * beginning at sequence zero.
- * @param parent - the agent whose session log to slice.
- * @returns the seed events, contiguous from seq 0; empty when no turn has completed.
- */
-function completedTurnPrefix(parent: Agent): SessionEvent[] {
-  const events = parent.session.events
-  const lastEnd = events.findLast(e => e.type === 'turn/end')
-  if (lastEnd === undefined) return []
-  // seq === array index (the append contract), so slice up to and including it.
-  return events.slice(0, lastEnd.seq + 1)
-}
 
 /**
  * The fork provider. Supports `depthLimit` and `outputSchema` (via the shared

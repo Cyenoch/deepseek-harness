@@ -1,8 +1,10 @@
 /** Trajectory view: compact summary over a turn-aware event ledger. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+// Type-only: pulls ui-sidepanel's SlotMap merge (the 'sidepanel.app' entry)
+// so PropsRuntime<'sidepanel.app'> resolves in this program.
+import type {} from '@deepseek-ai/dsh-client-ui-sidepanel/client'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   AssistantBlock, AssistantMessageNode, ConversationSnapshot,
   SnapshotStore,
@@ -117,10 +119,20 @@ function addUsage(
   }
 }
 
+/**
+ * Full view props over the side panel's session-maybe app seat. The maybe
+ * `useSession` yields `undefined` while no session is current; every selector
+ * read falls back and the body renders the no-session notice, so the hook
+ * count never varies across the session/no-session states.
+ */
+export type TrajectoryViewProps =
+  & PropsRuntime<'sidepanel.app'>
+  & InjectFace<TrajectoryViewInjected>
+  & PropsLocale<'trajectory'>
+
 export function TrajectoryView({
-  useSession, useDuration, loadOlder, setActualDuration,
-  inspect, onInspectDone, t,
-}: ConvViewProps & InjectFace<TrajectoryViewInjected> & PropsLocale<'trajectory'>) {
+  useSession, useDuration, loadOlder, setActualDuration, t,
+}: TrajectoryViewProps) {
   const [collapsedTurns, setCollapsedTurns] = useState<ReadonlySet<number>>(EMPTY_TURN_IDS)
   const [collapsedAssistants, setCollapsedAssistants] =
     useState<ReadonlySet<string>>(EMPTY_RECORD_IDS)
@@ -140,10 +152,10 @@ export function TrajectoryView({
     readonly index: number
   } | null>(null)
   const inspection = useSession(snapshot =>
-    snapshot.views.get('trajectory') ?? EMPTY_TRAJECTORY_SNAPSHOT)
-  const historyLoading = useSession(snapshot => snapshot.openState === 'loading')
-  const olderHistoryLoading = useSession(snapshot => snapshot.loadingOlder)
-  const hasOlderHistory = useSession(snapshot => snapshot.hasMore)
+    snapshot.views.get('trajectory') ?? EMPTY_TRAJECTORY_SNAPSHOT) ?? EMPTY_TRAJECTORY_SNAPSHOT
+  const historyLoading = useSession(snapshot => snapshot.openState === 'loading') ?? false
+  const olderHistoryLoading = useSession(snapshot => snapshot.loadingOlder) ?? false
+  const hasOlderHistory = useSession(snapshot => snapshot.hasMore) ?? false
   const nodes = inspection.eventNodes
   const eventLocations = inspection.eventLocations
   const historyBaseSeq = nodes[0]?.seq ?? 0
@@ -443,6 +455,9 @@ export function TrajectoryView({
     return loadOlder()
   }, [loadOlder])
 
+  const sessionId = useSession(snapshot => snapshot.sessionId) ?? null
+  if (sessionId === null) {
+    return <div className={css.empty}>{t('sidepanel.noSession')}</div>}
   return (
     <div className={css.root} data-conversation-composer-overlay="">
       <TrajectoryToolbar
@@ -497,8 +512,8 @@ export function TrajectoryView({
           onToggleTurn={toggleTurn}
           collapsedAssistants={collapsedAssistants}
           onToggleAssistant={toggleAssistant}
-          inspectCallId={inspect?.callId ?? null}
-          onInspectApplied={onInspectDone}
+          inspectCallId={null}
+          onInspectApplied={undefined}
         />
       </div>
     </div>

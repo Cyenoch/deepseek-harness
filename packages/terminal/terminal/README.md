@@ -15,9 +15,11 @@ Owner-scoped persistent PTY seam. `TerminalSessionService` registers as `ctx.ter
 - A successful spawn publishes one `TerminalSessionId`. The optional `name` is owner-local display metadata, never authority.
 - One session accepts at most one live send operation. Reads and signals may observe it; another send fails until the operation settles.
 - `TerminalSendResult.waitReason` and `sessionStatus` are independent. `session_exit` describes the top-level PTY process, not an arbitrary foreground command.
+- A backend may opt into human attachment with `supportsInteractive` and an `interactive` transport. The generated Agent-scoped `terminals` Remote namespace lists eligible backends, attaches a stable owner-local name, forwards bounded cursor-addressed raw VT output and raw input, resizes the PTY when supported, and closes it through the same registry lifecycle.
+- Human attachment is not a second authority path: every Remote method resolves the exact live Agent, ids remain owner-scoped, input is request-bounded, and a newly created PTY is rolled back if its initial resize fails.
 - `kill()` and disposal resolve only after the backend's captured process tree is quiescent. A cleanup failure rejects instead of claiming success and clears the matching backend and registry fences so a later close can retry without disturbing a newer attempt.
 
-The seam contains no `node-pty`, sandbox, tool-schema, prompt, task, or terminal-rendering policy. Implementations own terminal mechanics; consumers own model presentation and optional background-job registration.
+The seam contains no `node-pty`, sandbox, tool-schema, prompt, task, or terminal-rendering policy. Implementations own terminal mechanics; consumers own model presentation, human VT rendering, and optional background-job registration. Browser-safe Remote payloads live in `./remote-types`, separate from Host-only backend types.
 
 ## Model Experience
 
@@ -39,3 +41,4 @@ No direct invalidation; the named consumer owns request-prefix changes.
 
 - Sessions are process-local and are not restored after a harness restart.
 - Cross-agent sharing is intentionally absent; a future shared-session design needs a separate authority contract.
+- One named PTY cannot serve a model send and a human input stream concurrently; interactive input fails while a model send owns the session.

@@ -11,7 +11,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentOptions, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
-import type { Session, SessionId } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
 // Type-only: make `ctx.get('sandboxPolicy')` / `ctx.get('approval')` resolve
 // to the policy services when composed — delegation consumes both
@@ -234,4 +234,21 @@ export interface ChildCreateInputs {
   readonly childDepth: number
   /** How many leading seed events came from the parent's log. */
   readonly lineageSeedLength: number
+}
+
+/**
+ * The balanced completed-turn prefix of `parent`'s log: every event up to and
+ * including the last `turn/end`. An in-flight turn is unbalanced and cannot be
+ * replayed as a valid child session, so it is excluded; before any completed
+ * turn the child starts fresh. Because live sequence numbers equal array
+ * indexes, the result remains a valid seed beginning at sequence zero.
+ * @param parent - the agent whose session log to slice.
+ * @returns the seed events, contiguous from seq 0; empty when no turn has completed.
+ */
+export function completedTurnPrefix(parent: Agent): SessionEvent[] {
+  const events = parent.session.events
+  const lastEnd = events.findLast(event => event.type === 'turn/end')
+  if (lastEnd === undefined) return []
+  // seq === array index (the append contract), so slice up to and including it.
+  return events.slice(0, lastEnd.seq + 1)
 }

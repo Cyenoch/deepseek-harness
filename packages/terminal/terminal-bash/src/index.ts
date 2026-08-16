@@ -5,6 +5,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import { userInfo } from 'node:os'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { TerminalBackendCleanupError } from '@deepseek-ai/dsh-terminal'
@@ -52,9 +53,31 @@ function ensureSandboxModeFence(ctx: Context, owner: Agent): void {
   }, { global: true })
 }
 
-function childEnvironment(spec: TerminalBackendSpawnSpec): Record<string, string> {
+interface ShellInvocation {
+  readonly path: string
+  readonly args: readonly string[]
+}
+
+function resolveShell(config: ResolvedConfig, presentation: TerminalBackendSpawnSpec['presentation']): ShellInvocation {
+  if (presentation !== 'human') return { path: config.shellPath, args: config.shellArgs }
+  const path = config.humanShellPath ?? userInfo().shell
+  if (path === null || path.length === 0) {
+    throw new Error('terminal-bash: operating-system account has no login shell')
+  }
+  return { path, args: config.humanShellArgs ?? ['-l'] }
+}
+
+function childEnvironment(spec: TerminalBackendSpawnSpec, shell: ShellInvocation): Record<string, string> {
   // The subprocess provider supplies its own scrubbed ambient base; these are
   // deliberate terminal-specific overrides layered after it.
+  const identity = {
+    DSH_SHELL: '1',
+    DSH_SESSION_ID: spec.owner.id,
+    DSH_PTY_SESSION_ID: spec.sessionId,
+  }
+  if (spec.presentation === 'human') {
+    return { TERM: 'xterm-256color', SHELL: shell.path, ...identity }
+  }
   return {
     TERM: 'dumb',
     PAGER: 'cat',
@@ -62,14 +85,12 @@ function childEnvironment(spec: TerminalBackendSpawnSpec): Record<string, string
     PS1: CONTROLLED_PROMPT,
     PROMPT_COMMAND: 'printf "\\033]133;D;%s\\007" "$?"',
     BASH_SILENCE_DEPRECATION_WARNING: '1',
-    DSH_SHELL: '1',
-    DSH_SESSION_ID: spec.owner.id,
-    DSH_PTY_SESSION_ID: spec.sessionId,
+    ...identity,
   }
 }
 
-function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy): string[] {
-  const argv = [config.shellPath, ...config.shellArgs]
+function spawnArgv(ctx: Context, shell: ShellInvocation, policy: SandboxExecutionPolicy): string[] {
+  const argv = [shell.path, ...shell.args]
   if (policy.mode === 'danger-full-access') return argv
   const sandbox = ctx.get('sandbox')
   if (sandbox === undefined) {
@@ -101,6 +122,7 @@ async function initializeSession(session: LocalPtySession, signal?: AbortSignal)
 /** Local shell backend registered under the configured type. */
 export class BashTerminalBackend implements TerminalBackend {
   readonly type: string
+  readonly supportsInteractive = true
 
   constructor(
     private readonly ctx: Context,
@@ -120,12 +142,13 @@ export class BashTerminalBackend implements TerminalBackend {
     spec.signal?.throwIfAborted()
     ensureSandboxModeFence(this.ctx, spec.owner)
     const policy = this.ctx.sandboxPolicy.resolve({ session: spec.owner.session })
-    const argv = spawnArgv(this.ctx, this.config, policy)
+    const shell = resolveShell(this.config, spec.presentation)
+    const argv = spawnArgv(this.ctx, shell, policy)
     if (argv[0] === undefined) throw new Error('terminal-bash: sandbox returned empty argv')
     const terminal = await this.spawnTerminal({
       argv,
       cwd: spec.cwd ?? policy.workspaceRoot,
-      env: childEnvironment(spec),
+      env: childEnvironment(spec, shell),
       rows: this.config.rows,
       cols: this.config.cols,
       graceMs: this.config.disposeGraceMs,

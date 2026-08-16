@@ -4,7 +4,7 @@
 
 Electron 桌面组合层。[`cordis.patch.yml`](cordis.patch.yml) 叠加在 [`dsh-web-app`](../web-app/README.md) 之上，禁用 HTTP 服务器、Web startup 与自适应目录选择 row，为 Connection 服务选择 `electron` transport，为客户端 HMR 服务选择 `electron` manifest transport，并在本包的 `desktop-app` 插件之外挂载原生目录选择器客户端界面。
 
-Electron main 进程会在 profile 组合前提供用于排序的 `ctx.desktopRuntime` 与原生目录选择实现。配对的客户端界面让两个 Workspace 选择入口都连接到该实现。Connection Host 无需打开 socket 即可暴露 Fetch 分发器；客户端模块注册表保留共享模块图与已构建 bundle 路径，但不注册 `/plugins` route。HMR node 侧监视这些路径并推进图 revision；Electron 客户端侧通过 preload 读取 revision，并替换发生变化的客户端 fiber。原生生命周期与 IPC 权限归 [`apps/desktop`](../../../apps/desktop/README.md) 持有，而不在本 bundle 内。
+Electron main 进程会在 profile 组合前提供用于排序的 `ctx.desktopRuntime` 与原生目录选择实现。桌面 patch 会把 Web bundle 中客户端模块注册表和 HMR row 对 `webServer` 的激活依赖替换为 `desktopRuntime`；因此，被禁用的 HTTP 服务器不会让任一 row 卡在 pending 状态。配对的客户端界面让两个 Workspace 选择入口都连接到原生实现。Connection Host 无需打开 socket 即可暴露 Fetch 分发器；客户端模块注册表保留共享模块图与已构建 bundle 路径，但不注册 `/plugins` route。HMR node 侧监视这些路径并推进图 revision；Electron 客户端侧通过 preload 读取 revision，并替换发生变化的客户端 fiber。原生生命周期与 IPC 权限归 [`apps/desktop`](../../../apps/desktop/README.md) 持有，而不在本 bundle 内。
 
 ## 模型体验
 

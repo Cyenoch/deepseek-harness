@@ -991,6 +991,35 @@ describe('session-maybe adoption identity', () => {
     expect(view.container.textContent).toBe('s1#1')
   })
 
+  it('keeps a declared store Hook callable while the blank incarnation adopts its first session', () => {
+    const h = makeHost()
+    h.addSession('s1')
+    h.declare('k.maybe', SINGLE_MAYBE)
+    const handle = miniStore(() => ({ n: 0 }), { inc: s => ({ n: s.n + 1 }) })
+    let mounts = 0
+    let increment: (() => void) | undefined
+    h.add('k.maybe', {
+      component: ({ useStore, actions }: {
+        useStore: <S>(sel: (s: { n: number }) => S) => S | undefined
+        actions: { inc: () => void } | undefined
+      }) => {
+        const n = useStore(s => s.n)
+        const [mount] = useState(() => ++mounts)
+        increment = actions?.inc
+        return <b>{`${n ?? 'blank'}#${mount}`}</b>
+      },
+      store: handle,
+    })
+    const { view } = mountRoot(h, { 'k.maybe': SINGLE_MAYBE }, renderSlot => renderSlot('k.maybe', {}))
+
+    expect(view.container.textContent).toBe('blank#1')
+    expect(increment).toBeUndefined()
+    act(() => { h.current.set('s1') })
+    expect(view.container.textContent).toBe('0#1')
+    act(() => { increment!() })
+    expect(view.container.textContent).toBe('1#1')
+  })
+
   it('remounts on a post-adoption session switch (local state must not leak across sessions)', () => {
     const h = makeHost()
     h.addSession('s1')

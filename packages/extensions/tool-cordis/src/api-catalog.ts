@@ -1766,6 +1766,41 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'fresh backend type names.',
       },
       {
+        signature: '@Remote interactiveBackends(agent: Agent): string[]',
+        description: 'List backend types that can serve a human terminal renderer.',
+        parameters: [{ name: 'agent', description: 'resolved live Agent whose identity authorizes this Remote call.' }],
+        returns: 'interactive backend types in registration order.',
+      },
+      {
+        signature: '@Remote async attach(agent: Agent, request: TerminalAttachRequest, signal: AbortSignal): Promise<TerminalAttachResult>',
+        description: 'Resume an owner-local named PTY or create it through the selected backend.',
+        parameters: [{ name: 'agent', description: 'exact session owner.' }, { name: 'request', description: 'backend, stable name, working directory, and initial dimensions.' }, { name: 'signal', description: 'cancellation of a new unpublished PTY allocation.' }],
+        returns: 'attached PTY identity and resize support.',
+      },
+      {
+        signature: '@Remote async writeInput(agent: Agent, id: TerminalSessionIdValue, data: string): Promise<void>',
+        description: 'Write raw user input to an attached PTY.',
+        parameters: [{ name: 'agent', description: 'exact session owner.' }, { name: 'id', description: 'attached PTY identity.' }, { name: 'data', description: 'raw terminal input without newline conversion.' }],
+      },
+      {
+        signature: '@Remote async readStream( agent: Agent, id: TerminalSessionIdValue, cursor: number, signal: AbortSignal, ): Promise<TerminalStreamReadResult>',
+        description: 'Wait for raw VT output after a cursor.',
+        parameters: [{ name: 'agent', description: 'exact session owner.' }, { name: 'id', description: 'attached PTY identity.' }, { name: 'cursor', description: 'previous result cursor, starting at zero.' }, { name: 'signal', description: 'cancellation while no output is available.' }],
+        returns: 'output delta, next cursor, retention flag, and process state.',
+      },
+      {
+        signature: '@Remote async resize(agent: Agent, id: TerminalSessionIdValue, cols: number, rows: number): Promise<TerminalResizeResult>',
+        description: 'Synchronize one attached PTY with renderer dimensions.',
+        parameters: [{ name: 'agent', description: 'exact session owner.' }, { name: 'id', description: 'attached PTY identity.' }, { name: 'cols', description: 'positive terminal column count.' }, { name: 'rows', description: 'positive terminal row count.' }],
+        returns: 'whether the provider supports resizing.',
+      },
+      {
+        signature: '@Remote(\'close\') closeAttached(agent: Agent, id: TerminalSessionIdValue): Promise<boolean>',
+        description: 'Close one attached PTY.',
+        parameters: [{ name: 'agent', description: 'exact session owner.' }, { name: 'id', description: 'attached PTY identity.' }],
+        returns: 'whether this call began the close.',
+      },
+      {
         signature: 'async spawn(owner: Agent, request: TerminalSpawnRequest, signal?: AbortSignal): Promise<TerminalSpawnResult>',
         description: 'Create and publish one owner-scoped session after backend setup succeeds.',
         parameters: [{ name: 'owner', description: 'exact registered Agent that owns access and cleanup.' }, { name: 'request', description: 'backend type plus optional owner-local name and cwd.' }, { name: 'signal', description: 'cancellation of unpublished setup.' }],
@@ -4219,7 +4254,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessTerminalHandle',
-    declaration: 'export interface SubprocessTerminalHandle {\n    readonly pid: number;\n    readonly output: Readable;\n    readonly done: Promise<SubprocessOutcome>;\n    write(data: string): Promise<void>;\n    inspectForeground(): Promise<SubprocessTerminalForeground | undefined>;\n    signalForeground(signal: SubprocessTerminalSignal): Promise<number>;\n    terminate(): Promise<void>;\n}',
+    declaration: 'export interface SubprocessTerminalHandle {\n    readonly pid: number;\n    readonly output: Readable;\n    readonly done: Promise<SubprocessOutcome>;\n    write(data: string): Promise<void>;\n    resize?(cols: number, rows: number): Promise<void>;\n    inspectForeground(): Promise<SubprocessTerminalForeground | undefined>;\n    signalForeground(signal: SubprocessTerminalSignal): Promise<number>;\n    terminate(): Promise<void>;\n}',
   },
   {
     name: 'SubprocessTerminalSignal',
@@ -4254,20 +4289,36 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TableValueOf<S extends DomainSpec, N extends keyof S[\'tables\']> = S[\'tables\'][N] extends DomainTableSpec<string, infer V> ? V : never;',
   },
   {
+    name: 'TerminalAttachRequest',
+    declaration: 'export interface TerminalAttachRequest {\n    backendType: string;\n    name: string;\n    cwd?: string;\n    cols: number;\n    rows: number;\n}',
+  },
+  {
+    name: 'TerminalAttachResult',
+    declaration: 'export interface TerminalAttachResult {\n    sessionId: TerminalSessionIdValue;\n    backendType: string;\n    resumed: boolean;\n    resizeSupported: boolean;\n}',
+  },
+  {
     name: 'TerminalBackend',
-    declaration: 'export interface TerminalBackend {\n    readonly type: string;\n    spawn(spec: TerminalBackendSpawnSpec): Promise<TerminalBackendSession>;\n}',
+    declaration: 'export interface TerminalBackend {\n    readonly type: string;\n    readonly supportsInteractive?: boolean;\n    spawn(spec: TerminalBackendSpawnSpec): Promise<TerminalBackendSession>;\n}',
   },
   {
     name: 'TerminalBackendSession',
-    declaration: 'export interface TerminalBackendSession {\n    readonly motd: string;\n    readonly pid?: number;\n    startSend(request: TerminalSendRequest): TerminalSendOperation;\n    read(request: TerminalReadRequest): TerminalReadResult;\n    signal(signal: TerminalSignal): Promise<TerminalSignalResult>;\n    status(): TerminalSessionStatus;\n    close(reason: string): Promise<void>;\n}',
+    declaration: 'export interface TerminalBackendSession {\n    readonly motd: string;\n    readonly pid?: number;\n    readonly interactive?: TerminalInteractiveSession;\n    startSend(request: TerminalSendRequest): TerminalSendOperation;\n    read(request: TerminalReadRequest): TerminalReadResult;\n    signal(signal: TerminalSignal): Promise<TerminalSignalResult>;\n    status(): TerminalSessionStatus;\n    close(reason: string): Promise<void>;\n}',
   },
   {
     name: 'TerminalBackendSpawnSpec',
     declaration: 'export interface TerminalBackendSpawnSpec extends TerminalSpawnRequest {\n    sessionId: TerminalSessionIdValue;\n    owner: Agent;\n    signal?: AbortSignal;\n}',
   },
   {
+    name: 'TerminalBackendStreamRead',
+    declaration: 'export type TerminalBackendStreamRead = Omit<TerminalStreamReadResult, \'status\'>;',
+  },
+  {
     name: 'TerminalCallView',
     declaration: 'export interface TerminalCallView {\n    card: \'terminal\';\n    title: string;\n    description?: string;\n    cwd?: string;\n}',
+  },
+  {
+    name: 'TerminalInteractiveSession',
+    declaration: 'export interface TerminalInteractiveSession {\n    write(data: string): Promise<void>;\n    read(cursor: number, signal: AbortSignal): Promise<TerminalBackendStreamRead>;\n    resize(cols: number, rows: number): Promise<boolean>;\n}',
   },
   {
     name: 'TerminalReadRequest',
@@ -4276,6 +4327,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TerminalReadResult',
     declaration: 'export interface TerminalReadResult {\n    text: string;\n    totalLines: number;\n    lineBegin: number;\n    lineEnd: number;\n    truncated: boolean;\n}',
+  },
+  {
+    name: 'TerminalResizeResult',
+    declaration: 'export interface TerminalResizeResult {\n    supported: boolean;\n}',
   },
   {
     name: 'TerminalResultView',
@@ -4323,11 +4378,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TerminalSpawnRequest',
-    declaration: 'export interface TerminalSpawnRequest {\n    type: string;\n    name?: string;\n    cwd?: string;\n}',
+    declaration: 'export interface TerminalSpawnRequest {\n    type: string;\n    name?: string;\n    cwd?: string;\n    presentation?: \'model\' | \'human\';\n}',
   },
   {
     name: 'TerminalSpawnResult',
     declaration: 'export interface TerminalSpawnResult extends TerminalSessionSnapshot {\n    motd: string;\n}',
+  },
+  {
+    name: 'TerminalStreamReadResult',
+    declaration: 'export interface TerminalStreamReadResult {\n    data: string;\n    cursor: number;\n    truncated: boolean;\n    status: \'running\' | \'exited\';\n}',
   },
   {
     name: 'TerminalWaitReason',

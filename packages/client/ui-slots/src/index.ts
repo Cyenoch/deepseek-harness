@@ -15,7 +15,9 @@
  * The rule fires on the empty-map view, not on real redundancy. */
 import type { ReactNode } from 'react'
 import type { HostObservable } from './renderer.ts'
-import type { BoundActions, HandleOf, PropsStore, SnapshotSelectorHook, StoreDecl } from './store.ts'
+import type {
+  BoundActions, HandleOf, PropsMaybeStore, PropsStore, SnapshotSelectorHook, StoreDecl,
+} from './store.ts'
 
 export * from './store.ts'
 export * from './renderer.ts'
@@ -219,6 +221,10 @@ export type PropsRuntime<
     : ScopeOf<K> extends 'session-maybe' ? SessionMaybeStandardProps
       : object) &
   GlobalStandardProps
+
+/** Store props selected from the entry slot's scope. */
+export type PropsStoreFor<K extends keyof SlotMap & string, H> =
+  ScopeOf<K> extends 'session-maybe' ? PropsMaybeStore<H> : PropsStore<H>
 
 /** renderSlot dispatch options: keyed dispatch key, list filtering, and empty fallback. */
 export interface RenderOpts<EntryKey extends string = string> {
@@ -447,7 +453,7 @@ export type ComposedProps<
   I extends object,
   M = never,
   N = undefined,
-> = PropsRuntime<K, EntryKey> & PropsRenderSlots<S> & PropsStore<H> & InjectFace<I> & MatchedShare<SlotMap[K], M> & PropsLocale<N>
+> = PropsRuntime<K, EntryKey> & PropsRenderSlots<S> & PropsStoreFor<K, H> & InjectFace<I> & MatchedShare<SlotMap[K], M> & PropsLocale<N>
 
 /**
  * Inject factory parameter list, derived from the registration's declaration:

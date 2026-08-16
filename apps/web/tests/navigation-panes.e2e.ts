@@ -26,6 +26,7 @@ const SEED = join(SNAPSHOT_DIR, 'seed.jsonl')
 const TRAJECTORY_EXPECTED = join(SNAPSHOT_DIR, 'trajectory.expected.md')
 const SEARCH_EXPECTED = join(SNAPSHOT_DIR, 'search-results.expected.md')
 const TERMINAL_EXPECTED = join(SNAPSHOT_DIR, 'terminal-card.expected.md')
+const SIDEPANEL_EXPECTED = join(SNAPSHOT_DIR, 'sidepanel-launchpad.expected.md')
 const MODE = webSnapshotMode()
 const SEED_ID = 'navigation-panes-web-e2e'
 
@@ -67,14 +68,37 @@ async function ensureSeedOpen(page: Page): Promise<void> {
     const result = page.getByRole('tree', { name: 'Search results' }).getByRole('treeitem')
     await expect.poll(() => result.count(), { timeout: 15_000 }).toBe(1)
     await result.click()
-    await chat.waitFor({ timeout: 15_000 })
   }
-  await chat.click()
+  // A single registered conversation view has no tab strip. If another view
+  // contributes a tab, select Chat explicitly; either composition settles on
+  // the same transcript barrier.
+  if (await chat.count() > 0) await chat.click()
   await page.getByText('FIRST_DONE', { exact: true }).waitFor({ timeout: 15_000 })
   if (await search.inputValue() !== '') {
     await search.fill('')
     await expect.poll(() => search.inputValue(), { timeout: 5_000 }).toBe('')
   }
+}
+
+async function openSidePanel(page: Page): Promise<void> {
+  const frame = page.locator('[style*="grid-template-columns"]').first()
+  if (await frame.getAttribute('data-sidepanel-collapsed') === 'true') {
+    await page.getByRole('button', { name: 'Side panel', exact: true }).click()
+  }
+  await expect.poll(() => frame.getAttribute('data-sidepanel-collapsed'), { timeout: 5_000 }).toBeNull()
+}
+
+async function openSidePanelApp(page: Page, name: string): Promise<void> {
+  await openSidePanel(page)
+  const tab = page.getByRole('tab', { name, exact: true })
+  if (await tab.count() === 0) {
+    const launchpad = page.getByRole('region', { name: 'Launchpad' })
+    if (await launchpad.isHidden()) await page.getByRole('button', { name: 'Open a new tab' }).click()
+    await launchpad.getByRole('button', { name: new RegExp(`^${name}`) }).click()
+  } else {
+    await tab.click()
+  }
+  await expect.poll(() => tab.getAttribute('aria-selected'), { timeout: 5_000 }).toBe('true')
 }
 
 describe('web e2e: navigation & panes over a rich seeded session', () => {
@@ -223,27 +247,53 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     await expect.poll(() => page.locator('[role="treeitem"]').count(), { timeout: 10_000 }).toBeGreaterThanOrEqual(1)
   }, 90_000)
 
+  it.skipIf(MODE === 'record')('opens the side panel launchpad and connects its libghostty terminal', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-sidepanel'))
+    await ensureSeedOpen(page)
+    await openSidePanel(page)
+    const launchpad = page.getByRole('region', { name: 'Launchpad' })
+    await launchpad.waitFor({ timeout: 15_000 })
+    for (const app of ['Side chat', 'Terminal', 'Trajectory', 'Session log']) {
+      await expect.poll(() => launchpad.getByRole('button', { name: new RegExp(`^${app}`) }).count(), {
+        timeout: 10_000,
+      }).toBe(1)
+    }
+    const snapshot = (await captureStableAria(page, '[aria-label="Launchpad"]', scaffold.workspaceCwd))
+      .split(SEED_ID).join('{{seededId}}')
+    await compareOrRefreshGolden(SIDEPANEL_EXPECTED, snapshot, MODE)
+
+    await openSidePanelApp(page, 'Terminal')
+    const terminal = page.getByRole('region', { name: 'Interactive terminal' })
+    await terminal.waitFor({ timeout: 30_000 })
+    await expect.poll(() => terminal.textContent(), { timeout: 30_000 }).toContain('Connected')
+    await expect.poll(() => terminal.locator('canvas').count(), { timeout: 10_000 }).toBe(1)
+    await terminal.click()
+    await page.keyboard.type('printf SIDEPANEL_TERMINAL_OK')
+    await page.keyboard.press('Enter')
+  }, 90_000)
+
   it.skipIf(MODE === 'record')('renders the trajectory ledger and opens its local record inspector', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-trajectory'))
     await ensureSeedOpen(page)
-    await page.getByRole('tab', { name: 'Trajectory' }).click()
+    await openSidePanelApp(page, 'Trajectory')
     await page.waitForTimeout(100)
-    const overlayLayout = await page.getByRole('table').evaluate((table) => {
-      const host = table.closest('[data-conversation-scroll]')
-      const seat = host?.querySelector('[data-composer-seat]') ?? null
+    const panelLayout = await page.getByRole('table').evaluate((table) => {
       const pane = table.parentElement
+      const tabpanel = table.closest('[role="tabpanel"]')
       return {
-        hostPosition: host === null ? null : getComputedStyle(host).position,
         paneOverflowX: pane === null ? null : getComputedStyle(pane).overflowX,
         paneScrollableWidth: pane === null ? null : pane.scrollWidth - pane.clientWidth,
-        seatPosition: seat === null ? null : getComputedStyle(seat).position,
+        tabpanelDisplay: tabpanel === null ? null : getComputedStyle(tabpanel).display,
+        tabpanelHidden: tabpanel?.hasAttribute('hidden') ?? null,
+        tabpanelOverflow: tabpanel === null ? null : getComputedStyle(tabpanel).overflow,
       }
     })
-    expect(overlayLayout).toEqual({
-      hostPosition: 'relative',
+    expect(panelLayout).toEqual({
       paneOverflowX: 'hidden',
       paneScrollableWidth: 0,
-      seatPosition: 'absolute',
+      tabpanelDisplay: 'flex',
+      tabpanelHidden: false,
+      tabpanelOverflow: 'hidden',
     })
     expect({
       pageErrors: tripwire.pageErrors,
@@ -282,25 +332,22 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     }))
     expect(assistantTimingStyle.background).toContain('linear-gradient')
     expect(assistantTimingStyle.ttft).toMatch(/%$/)
-    const snapshot = (await captureStableAria(page, '[class*="viewArea"]', scaffold.workspaceCwd))
+    const snapshot = (await captureStableAria(
+      page,
+      'section[id^="sidepanel-panel-"][role="tabpanel"]:not([hidden])',
+      scaffold.workspaceCwd,
+    ))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(TRAJECTORY_EXPECTED, snapshot, MODE)
     await details.getByRole('button', { name: 'Close details' }).click()
   }, 60_000)
 
-  it.skipIf(MODE === 'record')('downloads through the Session Header and /export with one dialog', async () => {
+  it.skipIf(MODE === 'record')('downloads through the side panel app and /export with one dialog', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-export'))
     await ensureSeedOpen(page)
-    const exportButton = page.getByRole('button', { name: 'Session log' })
+    await openSidePanelApp(page, 'Session log')
+    const exportButton = page.getByRole('button', { name: 'Download session log' })
     expect(await exportButton.isDisabled()).toBe(false)
-    const header = exportButton.locator('xpath=ancestor::header[1]')
-    const [buttonBox, headerBox] = await Promise.all([
-      exportButton.boundingBox(), header.boundingBox(),
-    ])
-    if (buttonBox === null || headerBox === null) {
-      throw new Error('Session Header export geometry is unavailable')
-    }
-    expect(headerBox.x + headerBox.width - (buttonBox.x + buttonBox.width)).toBeLessThanOrEqual(32)
     const responsePromise = page.waitForResponse(response =>
       response.request().method() === 'HEAD'
       && new URL(response.url()).pathname === '/api/session.export', { timeout: 30_000 })
@@ -380,7 +427,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
   it.skipIf(MODE === 'record')('focuses the ledger by dragging an overview interval', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-timeline'))
     await ensureSeedOpen(page)
-    await page.getByRole('tab', { name: 'Trajectory' }).click()
+    await openSidePanelApp(page, 'Trajectory')
     const plot = page.getByLabel('Timeline overview; drag horizontally to focus events')
     await plot.waitFor({ timeout: 15_000 })
     const before = await page.locator('tr[data-kind]').count()
@@ -506,7 +553,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
 
   it.skipIf(MODE === 'record')('keeps the recorded fixture inventory exact', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'seed.jsonl', 'search-results.expected.md', 'trajectory.expected.md',
+      'seed.jsonl', 'search-results.expected.md', 'sidepanel-launchpad.expected.md', 'trajectory.expected.md',
       'terminal-card.expected.md',
     ])
   })

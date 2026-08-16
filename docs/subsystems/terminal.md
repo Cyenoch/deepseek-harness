@@ -2,7 +2,7 @@
 
 English | [中文](terminal.zh.md)
 
-Types shared by PTY backends, `ctx.terminals`, and the model-facing consumer. The [persistent PTY Agent Note](../../.agents/notes/implemented/feature/2026-07-16-persistent-pty-sessions.md) owns the rationale; this page records the cross-package vocabulary from [`packages/terminal/terminal/src/types.ts`](../../packages/terminal/terminal/src/types.ts).
+Types shared by PTY backends, `ctx.terminals`, the model-facing consumer, and the browser terminal Remote API. The [persistent PTY Agent Note](../../.agents/notes/implemented/feature/2026-07-16-persistent-pty-sessions.md) owns the original rationale; the [side-panel Agent Note](../../.agents/notes/implemented/feature/2026-08-15-side-panel-tabbed-right-column.md) owns the human attachment. This page records the cross-package vocabulary from [`types.ts`](../../packages/terminal/terminal/src/types.ts) and [`remote-types.ts`](../../packages/terminal/terminal/src/remote-types.ts).
 
 ## Identity and readiness
 
@@ -31,6 +31,8 @@ A backend owns how one registered type starts and detects readiness. `TerminalSe
 interface TerminalBackend {
   /** Stable type selected by {@link TerminalSpawnRequest.type}. */
   readonly type: string
+  /** Whether spawned sessions provide {@link TerminalBackendSession.interactive}. */
+  readonly supportsInteractive?: boolean
   /** Create an unpublished session or reject after cleaning partial resources; cleanup failure uses {@link TerminalBackendCleanupError}. */
   spawn(spec: TerminalBackendSpawnSpec): Promise<TerminalBackendSession>
 }
@@ -43,6 +45,8 @@ interface TerminalBackendSession {
   readonly motd: string
   /** Top-level process id when one exists. */
   readonly pid?: number
+  /** Raw human-terminal transport when this backend supports attachment. */
+  readonly interactive?: TerminalInteractiveSession
   /** Start one exclusive send operation. */
   startSend(request: TerminalSendRequest): TerminalSendOperation
   /** Read one bounded page from retained scrollback. */
@@ -53,6 +57,79 @@ interface TerminalBackendSession {
   status(): TerminalSessionStatus
   /** Idempotently close the captured owned process tree and await quiescence. */
   close(reason: string): Promise<void>
+}
+```
+
+## Human attachment
+
+An interactive backend adds a raw byte-stream view without changing the model-facing send/read behavior. The browser Remote API uses a client-safe branded identity and explicit attach, stream, and resize payloads; the Host resolves the calling Agent and retains authorization and cleanup ownership.
+
+```ts type-equiv
+/** Optional raw terminal transport implemented by backends that support human attachment. */
+interface TerminalInteractiveSession {
+  /** Write raw input without implicit newline or send-readiness tracking. */
+  write(data: string): Promise<void>
+  /** Wait for and read raw VT output after one stream cursor. */
+  read(cursor: number, signal: AbortSignal): Promise<TerminalBackendStreamRead>
+  /** Synchronize PTY rows and columns; false means the provider cannot resize. */
+  resize(cols: number, rows: number): Promise<boolean>
+}
+```
+
+```ts type-equiv
+/** Opaque owner-scoped identity for one live PTY session. */
+type TerminalSessionIdValue = Branded<'TerminalSessionId'>
+```
+
+```ts type-equiv
+/** Request to attach a human-facing terminal renderer to an owner-scoped PTY. */
+interface TerminalAttachRequest {
+  /** Registered backend selected from the terminal service's interactive backend list. */
+  backendType: string
+  /** Stable owner-local name used to resume the same PTY after a UI remount. */
+  name: string
+  /** Optional initial working directory interpreted by the backend. */
+  cwd?: string
+  /** Initial terminal columns measured by the renderer. */
+  cols: number
+  /** Initial terminal rows measured by the renderer. */
+  rows: number
+}
+```
+
+```ts type-equiv
+/** Published or resumed PTY returned to a human-facing terminal renderer. */
+interface TerminalAttachResult {
+  /** Owner-scoped PTY identity used by later stream operations. */
+  sessionId: TerminalSessionIdValue
+  /** Backend type that owns the PTY. */
+  backendType: string
+  /** Whether an existing named PTY was reused. */
+  resumed: boolean
+  /** Whether the provider accepted the requested terminal dimensions. */
+  resizeSupported: boolean
+}
+```
+
+```ts type-equiv
+/** Incremental raw terminal output for a VT renderer. */
+interface TerminalStreamReadResult {
+  /** Raw UTF-8-decoded VT data after the supplied cursor. */
+  data: string
+  /** Cursor for the next read, measured in the stream's string code units. */
+  cursor: number
+  /** Whether retained output preceding this result was dropped. */
+  truncated: boolean
+  /** Current top-level PTY state. */
+  status: 'running' | 'exited'
+}
+```
+
+```ts type-equiv
+/** Result of synchronizing the remote PTY dimensions. */
+interface TerminalResizeResult {
+  /** False when the subprocess provider cannot resize its PTY. */
+  supported: boolean
 }
 ```
 
@@ -119,6 +196,58 @@ registerBackend(backend: TerminalBackend): () => void
 listBackends(): string[]
 
 /**
+ * List backend types that can serve a human terminal renderer.
+ * @param agent - resolved live Agent whose identity authorizes this Remote call.
+ * @returns interactive backend types in registration order.
+ */
+@Remote interactiveBackends(agent: Agent): string[]
+
+/**
+ * Resume an owner-local named PTY or create it through the selected backend.
+ * @param agent - exact session owner.
+ * @param request - backend, stable name, working directory, and initial dimensions.
+ * @param signal - cancellation of a new unpublished PTY allocation.
+ * @returns attached PTY identity and resize support.
+ */
+@Remote async attach(agent: Agent, request: TerminalAttachRequest, signal: AbortSignal): Promise<TerminalAttachResult>
+
+/**
+ * Write raw user input to an attached PTY.
+ * @param agent - exact session owner.
+ * @param id - attached PTY identity.
+ * @param data - raw terminal input without newline conversion.
+ */
+@Remote async writeInput(agent: Agent, id: TerminalSessionIdValue, data: string): Promise<void>
+
+/**
+ * Wait for raw VT output after a cursor.
+ * @param agent - exact session owner.
+ * @param id - attached PTY identity.
+ * @param cursor - previous result cursor, starting at zero.
+ * @param signal - cancellation while no output is available.
+ * @returns output delta, next cursor, retention flag, and process state.
+ */
+@Remote async readStream( agent: Agent, id: TerminalSessionIdValue, cursor: number, signal: AbortSignal, ): Promise<TerminalStreamReadResult>
+
+/**
+ * Synchronize one attached PTY with renderer dimensions.
+ * @param agent - exact session owner.
+ * @param id - attached PTY identity.
+ * @param cols - positive terminal column count.
+ * @param rows - positive terminal row count.
+ * @returns whether the provider supports resizing.
+ */
+@Remote async resize(agent: Agent, id: TerminalSessionIdValue, cols: number, rows: number): Promise<TerminalResizeResult>
+
+/**
+ * Close one attached PTY.
+ * @param agent - exact session owner.
+ * @param id - attached PTY identity.
+ * @returns whether this call began the close.
+ */
+@Remote('close') closeAttached(agent: Agent, id: TerminalSessionIdValue): Promise<boolean>
+
+/**
  * Create and publish one owner-scoped session after backend setup succeeds.
  * @param owner - exact registered Agent that owns access and cleanup.
  * @param request - backend type plus optional owner-local name and cwd.
@@ -180,5 +309,5 @@ list(owner: Agent): TerminalSessionSnapshot[]
 
 Types: [Agent](core.md)
 
-Source: [`packages/terminal/terminal/src/index.ts:105`](../../packages/terminal/terminal/src/index.ts)
+Source: [`packages/terminal/terminal/src/index.ts:123`](../../packages/terminal/terminal/src/index.ts)
 <!-- END GENERATED cordis-surface -->

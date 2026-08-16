@@ -20,6 +20,7 @@ describe('terminal-bash config', () => {
   it('rejects empty names, invalid numbers, and a read cap above retention', () => {
     expect(() => { validateConfig(config({ backendType: '' })) }).toThrow('backendType')
     expect(() => { validateConfig(config({ shellPath: '' })) }).toThrow('shellPath')
+    expect(() => { validateConfig(config({ humanShellPath: '' })) }).toThrow('humanShellPath')
     expect(() => { validateConfig(config({ rows: 0 })) }).toThrow('rows')
     expect(() => { validateConfig(config({ rows: 1.5 })) }).toThrow('rows')
     expect(() => { validateConfig(config({ maxReadBytes: 2048 })) }).toThrow('must not exceed')

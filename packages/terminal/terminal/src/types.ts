@@ -4,11 +4,19 @@
  * @module @deepseek-ai/dsh-terminal/types
  */
 
-import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {
+  TerminalSessionIdValue,
+  TerminalStreamReadResult,
+} from './remote-types.ts'
 
-/** Internal exported basis for the public `TerminalSessionId` type/value pair. */
-export type TerminalSessionIdValue = Branded<'TerminalSessionId'>
+export type {
+  TerminalAttachRequest,
+  TerminalAttachResult,
+  TerminalResizeResult,
+  TerminalSessionIdValue,
+  TerminalStreamReadResult,
+} from './remote-types.ts'
 
 /**
  * Backend-reported failure to clean partial resources after unpublished setup failed.
@@ -48,6 +56,21 @@ export interface TerminalSpawnRequest {
   name?: string
   /** Optional initial working directory interpreted by the backend. */
   cwd?: string
+  /** Output consumer; omitted preserves the model-oriented backend defaults. */
+  presentation?: 'model' | 'human'
+}
+
+/** Backend read before the registry adds the current process status. */
+export type TerminalBackendStreamRead = Omit<TerminalStreamReadResult, 'status'>
+
+/** Optional raw terminal transport implemented by backends that support human attachment. */
+export interface TerminalInteractiveSession {
+  /** Write raw input without implicit newline or send-readiness tracking. */
+  write(data: string): Promise<void>
+  /** Wait for and read raw VT output after one stream cursor. */
+  read(cursor: number, signal: AbortSignal): Promise<TerminalBackendStreamRead>
+  /** Synchronize PTY rows and columns; false means the provider cannot resize. */
+  resize(cols: number, rows: number): Promise<boolean>
 }
 
 /** Fully identified request handed from the registry to a backend. */
@@ -150,6 +173,8 @@ export interface TerminalBackendSession {
   readonly motd: string
   /** Top-level process id when one exists. */
   readonly pid?: number
+  /** Raw human-terminal transport when this backend supports attachment. */
+  readonly interactive?: TerminalInteractiveSession
   /** Start one exclusive send operation. */
   startSend(request: TerminalSendRequest): TerminalSendOperation
   /** Read one bounded page from retained scrollback. */
@@ -166,6 +191,8 @@ export interface TerminalBackendSession {
 export interface TerminalBackend {
   /** Stable type selected by {@link TerminalSpawnRequest.type}. */
   readonly type: string
+  /** Whether spawned sessions provide {@link TerminalBackendSession.interactive}. */
+  readonly supportsInteractive?: boolean
   /** Create an unpublished session or reject after cleaning partial resources; cleanup failure uses {@link TerminalBackendCleanupError}. */
   spawn(spec: TerminalBackendSpawnSpec): Promise<TerminalBackendSession>
 }

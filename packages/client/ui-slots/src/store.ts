@@ -125,6 +125,15 @@ export type PropsStore<H> = H extends StoreHandle<infer T, infer A>
   : object
 
 /**
+ * Store props for a current-session-optional entry. The selector hook remains
+ * callable without a current session and returns `undefined`; actions become
+ * available only after the renderer resolves the session-owned instance.
+ */
+export type PropsMaybeStore<H> = H extends StoreHandle<infer T, infer A>
+  ? { useStore: MaybeSnapshotSelectorHook<T>; actions: BakedActions<T, A> | undefined }
+  : object
+
+/**
  * The defineStore contract (implementation lives in the runtime package,
  * bound to the snapshot-store engine): spec in, handle out, with T inferred
  * from `init` and the actions table constrained by T.

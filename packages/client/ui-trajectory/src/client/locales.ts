@@ -6,6 +6,8 @@ export const NS = 'trajectory'
 /** The trajectory dictionary key set (the source of truth for both locales). */
 export type TrajectoryKey =
   | 'view.trajectory'
+  | 'sidepanel.description'
+  | 'sidepanel.noSession'
   | 'toolbar.aria'
   | 'toolbar.duration'
   | 'toolbar.useActualDuration'
@@ -30,6 +32,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh: Record<TrajectoryKey, string> = {
   'view.trajectory': '轨迹',
+  'sidepanel.description': '按轮次查看会话的调用轨迹、耗时与用量',
+  'sidepanel.noSession': '当前没有选中的会话。',
   'toolbar.aria': '轨迹工具栏',
   'toolbar.duration': 'Duration',
   'toolbar.useActualDuration': 'Use actual duration',
@@ -48,6 +52,8 @@ export const zh: Record<TrajectoryKey, string> = {
 /** English dictionary. */
 export const en: Record<TrajectoryKey, string> = {
   'view.trajectory': 'Trajectory',
+  'sidepanel.description': 'Browse the session\u2019s per-turn calls, durations, and usage',
+  'sidepanel.noSession': 'No session is currently selected.',
   'toolbar.aria': 'Trajectory toolbar',
   'toolbar.duration': 'Duration',
   'toolbar.useActualDuration': 'Use actual duration',

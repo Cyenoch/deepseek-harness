@@ -339,6 +339,13 @@ describe('ConversationRoot resident composer', () => {
     expect(b.slotCalls).toContain('conversation.session.header.utilities')
   })
 
+  it('marks a title-only session header for balanced title-row spacing', () => {
+    const b = mount(conversationSnapshot(), undefined, undefined, {
+      viewTabs: [{ id: 'chat', label: 'Chat' }],
+    })
+    expect(b.view.container.querySelector('header')?.hasAttribute('data-title-only')).toBe(true)
+  })
+
   it('sticky composer seat wraps the whole overlay chain, not only the fallback stack', () => {
     const b = mount(conversationSnapshot(), undefined, undefined, { overlayTakeover: true })
     const seat = b.view.container.querySelector('[data-composer-seat]')

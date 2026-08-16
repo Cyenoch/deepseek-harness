@@ -70,6 +70,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/runtime': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/client/ui-layout': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/client/ui-sidebar': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
+  'packages/client/ui-sidepanel': { kind: 'none', reason: 'Browser-side UI plugin layer; renders logged command output and submits the /btw line through dsh-commands — nothing model-facing of its own.' },
   'packages/client/ui-conversation': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/client/ui-message-feedback': { kind: 'none', reason: 'Browser-side controls over the message-feedback sidecar; ratings and notes never enter the Session log, model context, or telemetry.' },
   'packages/client/ui-tool': { kind: 'none', reason: 'Browser-side Tool presentation layer; renders logged calls without changing model context.' },

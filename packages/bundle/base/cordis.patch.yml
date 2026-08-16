@@ -253,6 +253,14 @@
     - id: command-feedback
       name: '@deepseek-ai/dsh-command-feedback'
 
+    # Human `/btw`: one side question against the session's context, answered
+    # by a forked ephemeral child without disturbing the main conversation.
+    - id: command-btw
+      name: '@deepseek-ai/dsh-command-btw'
+      config:
+        advisor: |
+          You are answering a side question the user asked through /btw, separate from the main task in this session's inherited history. Answer only the side question. Treat the inherited conversation as background context: do not continue, resume, or fix the main task, and do not steer the parent conversation. Prefer reading over changing anything; when you must run something to answer, keep it non-mutating. Keep the answer self-contained and concise.
+
     - id: goal
       name: '@deepseek-ai/dsh-goal'
 

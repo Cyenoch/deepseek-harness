@@ -417,11 +417,17 @@ function standardKit(
   const store = scope === 'session-maybe' && info?.sessionId === undefined
     ? undefined
     : host.storeOf(entry, info?.sessionId)
-  if (store !== undefined) {
-    // The instance IS an observable snapshot source (contract getSnapshot/
-    // subscribe); the useStore hook binds here, cached per instance.
-    kit['useStore'] = observableHook(store)
-    kit['actions'] = store.actions
+  if (entry.store !== undefined) {
+    if (store === undefined && !(scope === 'session-maybe' && info?.sessionId === undefined)) {
+      throw new SlotAssemblyError(`entry in scope '${scope}' declares a store but the host resolved no instance`)
+    }
+    // A session-maybe entry keeps the selector Hook seat while its instance is
+    // absent. Its blank-born incarnation may adopt the first session without a
+    // remount, so removing and later adding this Hook would change Hook order.
+    kit['useStore'] = scope === 'session-maybe'
+      ? maybeObservableHook(store)
+      : observableHook(store as NonNullable<typeof store>)
+    kit['actions'] = store?.actions
   }
   if (entry.children !== undefined) {
     kit['renderSlot'] = boundRenderSlot(host, entry)

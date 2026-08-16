@@ -164,12 +164,13 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       throw new Error('subprocess-local: terminal argv must contain a program')
     }
     spec.signal?.throwIfAborted()
+    const env = childEnv(spec.env)
     const options: IPtyForkOptions = {
-      name: 'dumb',
+      name: env.TERM ?? 'dumb',
       rows: spec.rows,
       cols: spec.cols,
       cwd: spec.cwd,
-      env: childEnv(spec.env),
+      env,
     }
     const inspector = this.terminalInspector ?? createProcessInspector()
     const terminal = nodePty.spawn(file, [...spec.argv.slice(1)], options)

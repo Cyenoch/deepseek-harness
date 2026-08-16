@@ -12,15 +12,19 @@ function fakePanels(): PanelActions {
   return {
     setSidebar: vi.fn(),
     setDetails: vi.fn(),
+    setSidepanel: vi.fn(),
     toggleSidebar: vi.fn(),
+    toggleSidepanel: vi.fn(),
     setNarrow: vi.fn(),
     openDetails: vi.fn(),
     closeDetails: vi.fn(),
+    openSidepanel: vi.fn(),
+    closeSidepanel: vi.fn(),
   }
 }
 
 describe('LayoutController', () => {
-  it('forwards the three panel actions to the attached set', () => {
+  it('forwards the panel actions to the attached set', () => {
     const service = new LayoutController()
     const panels = fakePanels()
     service.attachPanels(panels)
@@ -28,12 +32,19 @@ describe('LayoutController', () => {
     service.toggleSidebar()
     service.openDetails()
     service.closeDetails()
+    service.toggleSidepanel()
+    service.openSidepanel()
+    service.closeSidepanel()
 
     expect(panels.toggleSidebar).toHaveBeenCalledTimes(1)
     expect(panels.openDetails).toHaveBeenCalledTimes(1)
     expect(panels.closeDetails).toHaveBeenCalledTimes(1)
+    expect(panels.toggleSidepanel).toHaveBeenCalledTimes(1)
+    expect(panels.openSidepanel).toHaveBeenCalledTimes(1)
+    expect(panels.closeSidepanel).toHaveBeenCalledTimes(1)
     expect(panels.setSidebar).not.toHaveBeenCalled()
     expect(panels.setDetails).not.toHaveBeenCalled()
+    expect(panels.setSidepanel).not.toHaveBeenCalled()
   })
 
   it('fails loud before the root entry wired its actions', () => {
@@ -41,6 +52,9 @@ describe('LayoutController', () => {
     expect(() => { service.toggleSidebar() }).toThrow(/panel actions not wired/)
     expect(() => { service.openDetails() }).toThrow(/panel actions not wired/)
     expect(() => { service.closeDetails() }).toThrow(/panel actions not wired/)
+    expect(() => { service.toggleSidepanel() }).toThrow(/panel actions not wired/)
+    expect(() => { service.openSidepanel() }).toThrow(/panel actions not wired/)
+    expect(() => { service.closeSidepanel() }).toThrow(/panel actions not wired/)
   })
 
   it('re-attach overwrites the stale action set (entry re-register)', () => {

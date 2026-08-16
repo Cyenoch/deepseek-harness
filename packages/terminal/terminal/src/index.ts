@@ -4,8 +4,10 @@
  * @module @deepseek-ai/dsh-terminal
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Buffer } from 'node:buffer'
+import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { TerminalBackendCleanupError } from './types.ts'
 import type {
   TerminalBackend,
@@ -14,18 +16,26 @@ import type {
   TerminalReadResult,
   TerminalSendOperation,
   TerminalSendRequest,
-  TerminalSessionIdValue,
   TerminalSessionSnapshot,
   TerminalSignal,
   TerminalSignalResult,
   TerminalSpawnRequest,
   TerminalSpawnResult,
 } from './types.ts'
+import type {
+  TerminalAttachRequest,
+  TerminalAttachResult,
+  TerminalResizeResult,
+  TerminalSessionIdValue,
+  TerminalStreamReadResult,
+} from './remote-types.ts'
 
 export type {
   TerminalBackend,
   TerminalBackendSession,
   TerminalBackendSpawnSpec,
+  TerminalBackendStreamRead,
+  TerminalInteractiveSession,
   TerminalReadRequest,
   TerminalReadResult,
   TerminalSendOperation,
@@ -40,6 +50,13 @@ export type {
   TerminalSpawnResult,
   TerminalWaitReason,
 } from './types.ts'
+export type {
+  TerminalAttachRequest,
+  TerminalAttachResult,
+  TerminalResizeResult,
+  TerminalSessionIdValue,
+  TerminalStreamReadResult,
+} from './remote-types.ts'
 export { TerminalBackendCleanupError } from './types.ts'
 
 /** Opaque identity minted by {@link TerminalSessionService} for one live PTY session. */
@@ -56,6 +73,7 @@ export type TerminalErrorCode =
   | 'DUPLICATE_BACKEND'
   | 'DUPLICATE_NAME'
   | 'FOREIGN_SESSION'
+  | 'INTERACTIVE_UNSUPPORTED'
   | 'NO_BACKEND'
   | 'NO_SESSION'
   | 'OWNER_NOT_LIVE'
@@ -102,7 +120,7 @@ interface SpawnReservation {
 }
 
 /** In-process registry for replaceable PTY backends and exact-Agent sessions. */
-export class TerminalSessionService extends Service {
+export class TerminalSessionService extends TypertRemoteService {
   private readonly backends = new Map<string, TerminalBackend>()
   private readonly sessions = new Map<TerminalSessionId, SessionRecord>()
   private readonly reservedNames = new Map<Agent, Set<string>>()
@@ -145,6 +163,126 @@ export class TerminalSessionService extends Service {
   }
 
   /**
+   * List backend types that can serve a human terminal renderer.
+   * @param agent - resolved live Agent whose identity authorizes this Remote call.
+   * @returns interactive backend types in registration order.
+   */
+  @Remote
+  interactiveBackends(agent: Agent): string[] {
+    if (!this.isLiveOwner(agent)) {
+      throw new TerminalError(`agent "${agent.id}" is not the registered PTY owner`, 'OWNER_NOT_LIVE')
+    }
+    return [...this.backends.values()]
+      .filter(backend => backend.supportsInteractive === true)
+      .map(backend => backend.type)
+  }
+
+  /**
+   * Resume an owner-local named PTY or create it through the selected backend.
+   * @param agent - exact session owner.
+   * @param request - backend, stable name, working directory, and initial dimensions.
+   * @param signal - cancellation of a new unpublished PTY allocation.
+   * @returns attached PTY identity and resize support.
+   */
+  @Remote
+  async attach(agent: Agent, request: TerminalAttachRequest, signal: AbortSignal): Promise<TerminalAttachResult> {
+    this.validateAttachRequest(request)
+    const backend = this.backends.get(request.backendType)
+    if (backend?.supportsInteractive !== true) {
+      throw new TerminalError(`PTY backend "${request.backendType}" does not support interactive attachment`, 'INTERACTIVE_UNSUPPORTED')
+    }
+    const existing = [...this.sessions.values()].find(record => record.owner === agent && record.name === request.name)
+    if (existing !== undefined) {
+      if (existing.type !== request.backendType) {
+        throw new TerminalError(
+          `PTY session name "${request.name}" already uses backend "${existing.type}"`,
+          'DUPLICATE_NAME',
+        )
+      }
+      const interactive = this.expectInteractive(existing)
+      const resizeSupported = await interactive.resize(request.cols, request.rows)
+      return { sessionId: existing.id, backendType: existing.type, resumed: true, resizeSupported }
+    }
+
+    const spawned = await this.spawn(agent, {
+      type: request.backendType,
+      name: request.name,
+      presentation: 'human',
+      ...request.cwd === undefined ? {} : { cwd: request.cwd },
+    }, signal)
+    const record = this.expectOwned(agent, spawned.sessionId)
+    try {
+      const resizeSupported = await this.expectInteractive(record).resize(request.cols, request.rows)
+      return { sessionId: record.id, backendType: record.type, resumed: false, resizeSupported }
+    } catch (error: unknown) {
+      try {
+        await this.kill(agent, record.id, 'interactive terminal attachment failed')
+      } catch (cleanupError: unknown) {
+        throw new AggregateError([error, cleanupError], 'PTY attachment and cleanup both failed')
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Write raw user input to an attached PTY.
+   * @param agent - exact session owner.
+   * @param id - attached PTY identity.
+   * @param data - raw terminal input without newline conversion.
+   */
+  @Remote
+  async writeInput(agent: Agent, id: TerminalSessionIdValue, data: string): Promise<void> {
+    if (Buffer.byteLength(data, 'utf8') > 64 * 1024) throw new Error('PTY input exceeds the 64 KiB request limit')
+    await this.expectInteractive(this.expectOwned(agent, id)).write(data)
+  }
+
+  /**
+   * Wait for raw VT output after a cursor.
+   * @param agent - exact session owner.
+   * @param id - attached PTY identity.
+   * @param cursor - previous result cursor, starting at zero.
+   * @param signal - cancellation while no output is available.
+   * @returns output delta, next cursor, retention flag, and process state.
+   */
+  @Remote
+  async readStream(
+    agent: Agent,
+    id: TerminalSessionIdValue,
+    cursor: number,
+    signal: AbortSignal,
+  ): Promise<TerminalStreamReadResult> {
+    if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error('PTY stream cursor must be a non-negative safe integer')
+    const record = this.expectOwned(agent, id)
+    const result = await this.expectInteractive(record).read(cursor, signal)
+    return { ...result, status: record.session.status().kind }
+  }
+
+  /**
+   * Synchronize one attached PTY with renderer dimensions.
+   * @param agent - exact session owner.
+   * @param id - attached PTY identity.
+   * @param cols - positive terminal column count.
+   * @param rows - positive terminal row count.
+   * @returns whether the provider supports resizing.
+   */
+  @Remote
+  async resize(agent: Agent, id: TerminalSessionIdValue, cols: number, rows: number): Promise<TerminalResizeResult> {
+    this.validateDimensions(cols, rows)
+    return { supported: await this.expectInteractive(this.expectOwned(agent, id)).resize(cols, rows) }
+  }
+
+  /**
+   * Close one attached PTY.
+   * @param agent - exact session owner.
+   * @param id - attached PTY identity.
+   * @returns whether this call began the close.
+   */
+  @Remote('close')
+  closeAttached(agent: Agent, id: TerminalSessionIdValue): Promise<boolean> {
+    return this.kill(agent, id, 'human terminal closed')
+  }
+
+  /**
    * Create and publish one owner-scoped session after backend setup succeeds.
    * @param owner - exact registered Agent that owns access and cleanup.
    * @param request - backend type plus optional owner-local name and cwd.
@@ -173,6 +311,7 @@ export class TerminalSessionService extends Service {
         type: request.type,
         ...request.name !== undefined ? { name: request.name } : {},
         ...request.cwd !== undefined ? { cwd: request.cwd } : {},
+        ...request.presentation !== undefined ? { presentation: request.presentation } : {},
         signal: backendSignal,
       })
       signal?.throwIfAborted()
@@ -313,6 +452,26 @@ export class TerminalSessionService extends Service {
 
   private assertActive(): void {
     if (this.disposing) throw new TerminalError('PTY service is disposing', 'SERVICE_DISPOSING')
+  }
+
+  private validateAttachRequest(request: TerminalAttachRequest): void {
+    if (request.backendType.trim().length === 0) throw new Error('PTY backend type must be non-empty')
+    if (request.name.trim().length === 0) throw new Error('PTY session name must be non-empty')
+    if (request.cwd !== undefined && request.cwd.length === 0) throw new Error('PTY working directory must be non-empty')
+    this.validateDimensions(request.cols, request.rows)
+  }
+
+  private validateDimensions(cols: number, rows: number): void {
+    if (!Number.isSafeInteger(cols) || cols <= 0) throw new Error('PTY columns must be a positive safe integer')
+    if (!Number.isSafeInteger(rows) || rows <= 0) throw new Error('PTY rows must be a positive safe integer')
+  }
+
+  private expectInteractive(record: SessionRecord): NonNullable<TerminalBackendSession['interactive']> {
+    const interactive = record.session.interactive
+    if (interactive === undefined) {
+      throw new TerminalError(`PTY backend "${record.type}" published no interactive transport`, 'INTERACTIVE_UNSUPPORTED')
+    }
+    return interactive
   }
 
   private isLiveOwner(owner: Agent): boolean {

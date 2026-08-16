@@ -3,6 +3,10 @@ export const NS = 'session-log-download'
 
 /** Simplified-Chinese Session export strings. */
 export const zh = {
+  'app.title': 'Session log',
+  'app.description': '下载包含本会话、子会话与附件的 ZIP 归档',
+  'app.button': '下载 Session log',
+  'app.noSession': '当前没有选中的会话。',
   'dialog.preparingTitle': '正在导出 Session',
   'dialog.preparingDescription': '正在准备包含当前 Session、子 Session 和附件的 ZIP 文件。',
   'dialog.successTitle': 'Session 导出已开始下载',
@@ -14,6 +18,10 @@ export const zh = {
 
 /** English Session export strings. */
 export const en: Record<keyof typeof zh, string> = {
+  'app.title': 'Session log',
+  'app.description': 'Download a ZIP archive of this session, its sub-sessions, and attachments',
+  'app.button': 'Download session log',
+  'app.noSession': 'No session is currently selected.',
   'dialog.preparingTitle': 'Exporting Session',
   'dialog.preparingDescription': 'Preparing a ZIP containing this Session, its sub-Sessions, and attachments.',
   'dialog.successTitle': 'Session download started',

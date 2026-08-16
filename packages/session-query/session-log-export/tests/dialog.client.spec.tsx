@@ -10,18 +10,23 @@ import { en } from '../src/client/locales.ts'
 
 const SID = 'session-export-dialog' as SessionId
 
+/** The uSES binding over one controller; shared by the bench and inline cases. */
+function bindExport(controller: SessionLogDownloadController) {
+  return function useSessionLogDownload<T>(selector: (state: ReturnType<typeof controller.store.getSnapshot>) => T): T {
+    return useSyncExternalStore(
+      listener => controller.store.subscribe(listener),
+      () => selector(controller.store.getSnapshot()),
+    )
+  }
+}
+
 function bench(
   controller = new SessionLogDownloadController(
     async () => new Response('zip', { status: 200 }), vi.fn(),
   ),
 ) {
   const dismiss = vi.fn((sessionId: SessionId) => { controller.dismiss(sessionId) })
-  function useSessionLogDownload<T>(selector: (state: ReturnType<typeof controller.store.getSnapshot>) => T): T {
-    return useSyncExternalStore(
-      listener => controller.store.subscribe(listener),
-      () => selector(controller.store.getSnapshot()),
-    )
-  }
+  const useSessionLogDownload = bindExport(controller)
   const t = (key: keyof typeof en): string => en[key]
   const props = { sessionId: SID, useSessionLogDownload, dismiss, t } as unknown as SessionLogDownloadDialogProps
   const view = render(<SessionLogDownloadDialog {...props} />)
@@ -72,5 +77,31 @@ describe('SessionLogDownloadDialog', () => {
     if (close === undefined) throw new Error('Session export dialog has no footer action')
     fireEvent.click(close)
     await waitFor(() => { expect(b.dismiss).toHaveBeenCalledWith(SID) })
+  })
+
+  it('stays dismiss-guarded in the no-session state', async () => {
+    // The session-maybe seat can hold an open entry under the empty key only
+    // through crafted state; the guards must drop the close instead of
+    // dismissing an undefined session id.
+    const controller = new SessionLogDownloadController(
+      async () => new Response('zip', { status: 200 }), vi.fn(),
+    )
+    const dismiss = vi.fn((sessionId: SessionId) => { controller.dismiss(sessionId) })
+    const useSessionLogDownload = bindExport(controller)
+    act(() => {
+      controller.store.set({ bySession: { '': { open: true, status: 'success', error: null } } })
+    })
+    const props = {
+      sessionId: undefined, useSessionLogDownload, dismiss,
+      t: (key: keyof typeof en): string => en[key],
+    } as unknown as SessionLogDownloadDialogProps
+    const view = render(<SessionLogDownloadDialog {...props} />)
+    expect(await view.findByRole('dialog', { name: 'Session download started' })).toBeTruthy()
+    // Every close path (header and footer) must hit the same guard.
+    for (const close of view.getAllByRole('button', { name: 'Close' })) {
+      fireEvent.click(close)
+    }
+    expect(dismiss).not.toHaveBeenCalled()
+    expect(view.getByRole('dialog')).toBeTruthy()
   })
 })

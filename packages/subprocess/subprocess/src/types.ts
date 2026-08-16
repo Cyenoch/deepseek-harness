@@ -245,6 +245,13 @@ export interface SubprocessTerminalHandle {
    */
   write(data: string): Promise<void>
   /**
+   * Resize the PTY when the provider exposes a terminal-size primitive.
+   * @param cols - positive column count.
+   * @param rows - positive row count.
+   * @returns completion after the provider applies the dimensions.
+   */
+  resize?(cols: number, rows: number): Promise<void>
+  /**
    * Inspect the current foreground process group.
    * @returns its id and input-wait fact, or undefined when no foreground group can be resolved.
    */

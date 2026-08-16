@@ -4,6 +4,8 @@ Status: proposed
 
 English | [中文](2026-07-08-interactive-side-sessions.zh.md)
 
+Partially realized by [BTW side questions](../../implemented/feature/2026-08-15-btw-side-questions.md), which shipped the fork/attach, advisor framing, and presentation mechanics as the `/btw` command without merge-back; this proposal remains active for merge-back, session switching, and the read-only enforcement gate.
+
 ## Problem
 
 A user may want to explore a question from a live session without changing its main context. Existing primitives do not expose that product shape: [session-store fork](../../implemented/feature/2026-06-30-session-store-fork-api.md) creates an unattached session, while [fork subagents](../../implemented/feature/2026-06-21-subagent-capability-seam.md) are model-driven tasks whose transcript collapses into one tool result. Neither gives the user a separate conversation, and neither records a conclusion in the parent together with the side session that produced it.

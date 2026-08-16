@@ -10,6 +10,10 @@ export interface Config {
   shellPath?: string
   /** Shell arguments (default: `--noprofile --norc -i`). */
   shellArgs?: string[]
+  /** Human-terminal shell executable (default: the operating-system account shell). */
+  humanShellPath?: string
+  /** Human-terminal shell arguments (default: `-l`). */
+  humanShellArgs?: string[]
   /** Terminal rows. */
   rows?: number
   /** Terminal columns. */
@@ -37,14 +41,17 @@ export interface Config {
   disposeGraceMs?: number
 }
 
-/** Configuration after Schemastery defaults. */
-export type ResolvedConfig = Required<Config>
+/** Configuration after Schemastery defaults; human shell overrides remain optional. */
+export type ResolvedConfig = Required<Omit<Config, 'humanShellPath' | 'humanShellArgs'>>
+  & Pick<Config, 'humanShellPath' | 'humanShellArgs'>
 
 /** Schemastery config exposed by the plugin. */
 export const Config: z<Config> = z.object({
   backendType: z.string().default('shell'),
   shellPath: z.string().default('/bin/bash'),
   shellArgs: z.array(z.string()).default(['--noprofile', '--norc', '-i']),
+  humanShellPath: z.string(),
+  humanShellArgs: z.array(z.string()),
   rows: z.number().default(40),
   cols: z.number().default(160),
   scrollbackLines: z.number().default(10_000),
@@ -67,6 +74,9 @@ export function validateConfig(config: Config): asserts config is ResolvedConfig
   const resolved = config as ResolvedConfig
   if (resolved.backendType.length === 0) throw new Error('terminal-bash: backendType must be non-empty')
   if (resolved.shellPath.length === 0) throw new Error('terminal-bash: shellPath must be non-empty')
+  if (resolved.humanShellPath !== undefined && resolved.humanShellPath.length === 0) {
+    throw new Error('terminal-bash: humanShellPath must be non-empty when configured')
+  }
   for (const [name, value] of Object.entries(resolved)) {
     if (typeof value === 'number' && (!Number.isSafeInteger(value) || value <= 0)) {
       throw new Error(`terminal-bash: ${name} must be a positive safe integer`)

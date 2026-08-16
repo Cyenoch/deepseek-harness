@@ -5,6 +5,7 @@
   ],
   "ignoreBinaries": [
     "bwrap",
+    "electron-builder",
     "icacls",
     "musl-gcc",
     "python3",
@@ -24,6 +25,7 @@
   "workspaces": {
     ".": {
       "entry": [
+        "scripts/dev-desktop.ts",
         "scripts/**/*.mjs",
         "scripts/**/*.cjs"
       ],
@@ -602,6 +604,11 @@
         "zod"
       ]
     },
+    "packages/terminal/terminal": {
+      "ignoreDependencies": [
+        "zod"
+      ]
+    },
     "packages/examples/jsonrpc-demo": {
       "project": [
         "src/**/*.ts"
@@ -738,6 +745,23 @@
       ],
       "ignoreDependencies": [
         "@deepseek-ai/.+"
+      ]
+    },
+    "apps/desktop": {
+      "entry": [
+        "src/main.ts",
+        "src/preload.ts",
+        "tests/**/*.spec.ts",
+        "ui/supervisor.js"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts",
+        "ui/**/*.js"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/.+",
+        "dsh-app-owned-probe"
       ]
     },
     "packages/client/modules": {

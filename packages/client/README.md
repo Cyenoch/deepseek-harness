@@ -21,6 +21,7 @@ The browser side of the dsh web GUI: shell boot, browser-host communication, sha
 | [`ui-attachment/`](ui-attachment/README.md) | Provides attachment display atoms: draft-image rail, message gallery, and lightbox. |
 | [`ui-layout/`](ui-layout/README.md) | Arranges the main application regions. |
 | [`ui-sidebar/`](ui-sidebar/README.md) | Presents workspace and session navigation. |
+| [`ui-sidepanel/`](ui-sidepanel/README.md) | Tabbed side panel with a launchpad: `/btw` side chat and app seats. |
 | [`ui-workspace/`](ui-workspace/README.md) | Provides workspace selection and creation surfaces. |
 | [`ui-conversation/`](ui-conversation/README.md) | Presents the active conversation and its input surface. |
 | [`ui-tool/`](ui-tool/README.md) | Composes Tool call trees and keyed per-Tool views. |

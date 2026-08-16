@@ -1,0 +1,76 @@
+/**
+ * Side panel dictionaries: shell controls and app copy. Product copy is
+ * Chinese-first with an English counterpart, per the client styling rules.
+ */
+/** Chinese dictionary (product copy is Chinese-first). */
+export const zh = {
+  'panel.close': '关闭侧栏',
+  'panel.tab.close': '关闭标签页',
+  'panel.launchpad': '启动台',
+  'panel.launchpad.title': '侧栏',
+  'panel.launchpad.empty': '没有可用的侧栏应用',
+  'panel.tab.add': '打开新标签页',
+  'panel.resize': '调整分区大小',
+  'panel.drop.left': '左侧拆分',
+  'panel.drop.right': '右侧拆分',
+  'panel.drop.top': '上方拆分',
+  'panel.drop.bottom': '下方拆分',
+  'panel.drop.center': '合并到标签组',
+  'panel.appMissing': '该应用未注册',
+  'btw.title': '侧边问答',
+  'btw.description': '不打断主对话，就当前会话提出一次性侧边问题',
+  'btw.input.placeholder': '问一个侧边问题…',
+  'btw.input.submit': '提问',
+  'btw.empty': '还没有侧边问答。输入一个问题开始。',
+  'btw.pending': '思考中…',
+  'btw.failed': '提问失败',
+  'btw.noSession': '选择一个会话后即可提问。',
+  'terminal.title': '终端',
+  'terminal.description': '由 libghostty-vt WASM 渲染的交互式 Shell',
+  'terminal.noSession': '选择一个会话后即可打开终端。',
+  'terminal.unavailable': '当前环境没有可用的交互式终端后端。',
+  'terminal.chooseBackend': '选择终端后端',
+  'terminal.connecting': '正在连接终端…',
+  'terminal.canvas': '交互式终端',
+  'terminal.retry': '重新连接',
+  'terminal.truncated': '较早的终端输出已超出保留上限。',
+  'terminal.status.exited': '已退出',
+} as const
+
+/** English dictionary counterpart. */
+export const en = {
+  'panel.close': 'Close side panel',
+  'panel.tab.close': 'Close tab',
+  'panel.launchpad': 'Launchpad',
+  'panel.launchpad.title': 'Side panel',
+  'panel.launchpad.empty': 'No side panel apps available',
+  'panel.tab.add': 'Open a new tab',
+  'panel.resize': 'Resize split',
+  'panel.drop.left': 'Split left',
+  'panel.drop.right': 'Split right',
+  'panel.drop.top': 'Split above',
+  'panel.drop.bottom': 'Split below',
+  'panel.drop.center': 'Merge into tab group',
+  'panel.appMissing': 'This app is not registered',
+  'btw.title': 'Side chat',
+  'btw.description': 'Ask a one-shot side question about this session without disturbing it',
+  'btw.input.placeholder': 'Ask a side question…',
+  'btw.input.submit': 'Ask',
+  'btw.empty': 'No side questions yet. Type one to start.',
+  'btw.pending': 'Thinking…',
+  'btw.failed': 'The question failed to submit',
+  'btw.noSession': 'Select a session to ask about it.',
+  'terminal.title': 'Terminal',
+  'terminal.description': 'Interactive shell rendered by libghostty-vt WASM',
+  'terminal.noSession': 'Select a session to open its terminal.',
+  'terminal.unavailable': 'No interactive terminal backend is available in this environment.',
+  'terminal.chooseBackend': 'Choose a terminal backend',
+  'terminal.connecting': 'Connecting to terminal…',
+  'terminal.canvas': 'Interactive terminal',
+  'terminal.retry': 'Reconnect',
+  'terminal.truncated': 'Earlier terminal output exceeded the retention limit.',
+  'terminal.status.exited': 'Exited',
+} as const
+
+/** Dictionary keys owned by the side panel namespace. */
+export type SidepanelKey = keyof typeof zh

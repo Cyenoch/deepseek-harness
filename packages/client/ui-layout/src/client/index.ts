@@ -71,6 +71,20 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'details': { kind: 'single'; scope: 'session'; owner: DetailsOwnerProps }
     /**
+     * The outermost right column: the extensible side panel (browser-style
+     * tabs with a launchpad), hosting ongoing side work such as the /btw
+     * side chat or a terminal. OCCUPIED by ui-sidepanel's SidePanelRoot,
+     * which declares the app seats inside it — registering here replaces the
+     * panel and takes those seats with it. Absent an occupant the column
+     * renders nothing while closed.
+     *
+     * Current-session-optional like the conversation column: the occupant
+     * keeps its React identity across a session switch and owns both states;
+     * session facts arrive through the `session-maybe` framework hooks, and
+     * `ctx.layout` owns whether the column is open.
+     */
+    'sidepanel': { kind: 'single'; scope: 'session-maybe'; owner: SidepanelOwnerProps }
+    /**
      * Frame-wide floating layer, above every column and outside their scroll
      * containers. Deliberately generic and unowned by any feature: a badge, a
      * toast stack or a status pill all belong here, and entries order among
@@ -104,6 +118,9 @@ export interface ConvOwnerProps {}
 /** Details owner share: empty — sessionId arrives as a framework-standard prop. */
 export interface DetailsOwnerProps {}
 
+/** Side panel owner share: empty — session facts arrive via the session-maybe hooks. */
+export interface SidepanelOwnerProps {}
+
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
 export const inject = ['slots', 'theme']
 
@@ -123,6 +140,7 @@ export function apply(ctx: ClientContext): void {
         'sidebar': { kind: 'single', scope: 'root' },
         'conversation': { kind: 'single', scope: 'session-maybe' },
         'details': { kind: 'single', scope: 'session' },
+        'sidepanel': { kind: 'single', scope: 'session-maybe' },
         'shell.overlay': { kind: 'list', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per
